@@ -111,3 +111,31 @@ describe("defaultDecayStrategy.floorAt", () => {
     expect(floor.getTime()).toBe(lastReinforcedAt.getTime() + 10 * HOUR);
   });
 });
+
+/**
+ * ADR 0010 は既定の減衰閾値を 0.05 に固定している。この値は Phase 1 で
+ * `decay_floor_at` として実際に書き込まれ、Phase 2 で「いつ検索から外れるか」を決める。
+ *
+ * 直前の「threshold を省略すると既定値が使われる」テストは、両辺で
+ * `DEFAULT_DECAY_THRESHOLD` を使っているため**既定値そのものが変わっても赤くならない**。
+ * 既定値を数値で釘付けにするのはこの2本である。
+ */
+describe("DEFAULT_DECAY_THRESHOLD（ADR 0010 が固定する値）", () => {
+  it("既定の閾値は 0.05 である", () => {
+    expect(DEFAULT_DECAY_THRESHOLD).toBe(0.05);
+  });
+
+  it("threshold 省略時の floorAt が 0.05 由来の絶対時刻になる", () => {
+    const recordedAt = new Date("2026-01-01T00:00:00.000Z");
+    const floor = defaultDecayStrategy.floorAt({
+      recordedAt,
+      lastReinforcedAt: null,
+      strength: 1,
+      halfLifeHours: 24,
+    });
+    // 24h * log2(1 / 0.05) = 24 * log2(20) ≈ 103.6987 時間後
+    const expectedHours = 24 * Math.log2(20);
+    // Date はミリ秒未満を切り捨てるので 1ms の許容で比べる
+    expect(floor.getTime()).toBeCloseTo(recordedAt.getTime() + expectedHours * HOUR, -1);
+  });
+});

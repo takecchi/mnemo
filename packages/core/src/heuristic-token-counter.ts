@@ -9,7 +9,7 @@ import type { TokenCounter } from "./interfaces/token-counter.js";
  */
 export const heuristicTokenCounter: TokenCounter = {
   count(text: string): { tokens: number; counter: "heuristic" } {
-    const tokens = text.length === 0 ? 0 : Math.ceil(text.length / 4);
+    const tokens = Math.ceil(text.length / 4);
     return { tokens, counter: "heuristic" };
   },
 };

@@ -37,9 +37,6 @@ export interface ScoringInput {
 export type ScoringStrategy = (input: ScoringInput) => ScoreBreakdown;
 
 function computeTagMatch(tags: string[], queryTags: string[]): number {
-  if (queryTags.length === 0) {
-    return 1;
-  }
   const tagSet = new Set(tags);
   const matchedCount = queryTags.filter((tag) => tagSet.has(tag)).length;
   return 1 + matchedCount * 0.1;

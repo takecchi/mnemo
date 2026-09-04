@@ -104,3 +104,48 @@ describe("defaultScoringStrategy", () => {
     expect(score.total).toBeCloseTo(0.5, 10);
   });
 });
+
+/**
+ * docs/memory-model.md §3「三つの時計」の中心的な要求:
+ * **鮮度は `occurred_at ?? recorded_at` を使い、減衰は `last_reinforced_at` を使う。**
+ * この2つを混ぜると「昔起きたが最近よく使う記憶」と「最近起きたが一度も使われていない記憶」を
+ * 区別できなくなる——文書が名指しで禁じている取り違えである。
+ *
+ * 下の2本は、その混同が起きたときに実際に赤くなるための歯である。
+ * 3つの時刻をすべて異なる値にしないと、混同しても値が一致してしまい検出できない。
+ */
+describe("defaultScoringStrategy: 鮮度と減衰は別の時計を使う（docs/memory-model.md §3）", () => {
+  const occurredAt = new Date("2026-01-01T00:00:00.000Z");
+  const recordedAt = new Date("2026-01-02T00:00:00.000Z"); // occurredAt + 24h
+  const lastReinforcedAt = new Date("2026-01-04T00:00:00.000Z"); // occurredAt + 72h
+  const now = new Date("2026-01-05T00:00:00.000Z"); // occurredAt + 96h
+
+  const input = {
+    now,
+    tags: [],
+    queryTags: [],
+    occurredAt,
+    recordedAt,
+    lastReinforcedAt,
+    strength: 1,
+    halfLifeHours: 24,
+  };
+
+  it("freshness は occurredAt を起点にする（lastReinforcedAt にも recordedAt にも寄らない）", () => {
+    const score = defaultScoringStrategy(input);
+    // occurredAt 起点なら elapsed=96h = 4 half-life -> 0.0625
+    expect(score.freshness).toBeCloseTo(Math.pow(0.5, 4), 10);
+    // lastReinforcedAt 起点(elapsed=24h -> 0.5) でも recordedAt 起点(elapsed=72h -> 0.125) でもない
+    expect(score.freshness).not.toBeCloseTo(0.5, 5);
+    expect(score.freshness).not.toBeCloseTo(0.125, 5);
+  });
+
+  it("decay は lastReinforcedAt を起点にする（occurredAt にも寄らない）", () => {
+    const score = defaultScoringStrategy(input);
+    // lastReinforcedAt 起点なら elapsed=24h = 1 half-life -> 0.5
+    expect(score.decay).toBeCloseTo(0.5, 10);
+    // occurredAt 起点(0.0625) でも recordedAt 起点(0.125) でもない
+    expect(score.decay).not.toBeCloseTo(Math.pow(0.5, 4), 5);
+    expect(score.decay).not.toBeCloseTo(0.125, 5);
+  });
+});
