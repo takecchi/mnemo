@@ -31,9 +31,32 @@ Application → Agent / LLM → Cognitive Runtime → Storage / LLM / Queue
 
 ---
 
+## 何をするものか
+
+特定のチャットボット専用ではなく、Web アプリ・AI 秘書・Discord Bot・ゲーム NPC・
+コーディングエージェント・ロボット・個人 AI・業務エージェントから再利用できる汎用基盤を目指す。
+
+大量の会話ログを毎回 LLM へ全部渡すのではなく、**必要な記憶だけを**
+意味・構造・時間・重要度・利用頻度・関連性から思い出す。
+
+そこから新しい知識を統合し、使われない記憶は自然に想起されにくくなり、
+必要なときだけ過去の記憶を呼び戻せる。
+
+外から見える API は小さく保つ:
+
+```ts
+await brain.observe({ type: "message", actor: "user", content: "..." })
+const recalled = await brain.recall({ query: "..." })
+const thought = await brain.reflect()
+await brain.consolidate()
+await brain.forget()
+```
+
+---
+
 ## いまの状態
 
-**設計フェーズ。コードはまだ無い。**
+**設計フェーズ。実装コードはまだ無い。**
 
 | 文書 | 何が書いてあるか |
 |---|---|
@@ -48,7 +71,8 @@ Application → Agent / LLM → Cognitive Runtime → Storage / LLM / Queue
 
 このリポジトリで作業する人・エージェント向けの手引きは [AGENTS.md](./AGENTS.md) にある。
 
-**設計が承認されてから Phase 1 の実装に入る。**
+**設計が固まってから Phase 1（Observation / Memory / PostgreSQL + pgvector / `observe()` /
+`recall()` / スコアの内訳と説明）の実装に入る。**
 
 ---
 
@@ -70,4 +94,5 @@ forget(ctx, target)      // 記憶を落とす / 失効させる
 
 - **名前は仮**（`mnemo` / `@mnemo/*`）。unscoped の `mnemo` は npm に別のパッケージが既にある。
   経緯は [docs/vision.md](./docs/vision.md) の「名前について」を見ること
-- **設計はまだレビュー前である。**ここに書かれていることは決定であって、実装された事実ではない
+- **ここに書かれているのは設計であって、実装された事実ではない。**
+  実装の進み具合は [docs/roadmap.md](./docs/roadmap.md) を見ること
