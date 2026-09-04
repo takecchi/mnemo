@@ -47,7 +47,7 @@ mnemo は既存の LLM アプリケーションの**下に敷く**認知レイ�
 
 Application と Agent/LLM は mnemo の**利用側**であり、mnemo が知る必要はない。mnemo が知るのは
 Runtime とその下（Storage / LLM / Queue の interface）だけである。プロンプトの組み立ては呼び出し側の
-責務であり mnemo は行わない（§10 の限界、[docs/recall.md](./recall.md) で詳説）。
+責務であり mnemo は行わない（この限界は [docs/recall.md](./recall.md) で詳説）。
 
 ### 3.2 Runtime 内部 — 5 つの動詞がどこを通るか
 
@@ -94,7 +94,7 @@ reflect / consolidate
 ```
 forget
   → MemoryStore.updateStatus(status: 'forgotten')  ── 同一トランザクションで
-  → EventStore.append                               ── │ 同一トランザクションで（§17 の「必ず」の強制）
+  → EventStore.append                               ── │ 同一トランザクションで（「必ず残る」の強制）
 ```
 
 `purge()`（物理削除）は Phase 2 以降。イベント種別だけは Phase 1 のスキーマに含める。
@@ -106,7 +106,7 @@ forget
 
 `observe()` は `extract: 'sync' | 'deferred'` を受ける。`sync` は observe の応答が遅くなる代わりに
 その場で記憶になる。`deferred` は observe が速く返る代わりに、抽出が終わるまで recall に乗らない。
-**どちらを既定にするかはオーナーの判断が必要**（§11 に残す。製品の性格を決める選択であり、
+**どちらを既定にするかはオーナーの判断が必要**（[docs/roadmap.md](./roadmap.md) の「設計上まだ判断が必要な点」に残す。製品の性格を決める選択であり、
 このドキュメントで先取りしない）。
 
 `deferred` を選び、かつ Scheduler が `InlineScheduler`（キュー無し）の構成では、誰かが実際に
@@ -421,7 +421,7 @@ type DecayStrategy = {
   時刻であり、強化イベントが起きたときだけ再計算される。§3.5・[docs/decisions/](./decisions/) の
   忘却 ADR）。
 - 鮮度スコアは `occurred_at ?? recorded_at` を使い、減衰は `last_reinforced_at` を使う
-  （時計を混同しない。§18 相当、[docs/memory-model.md](./memory-model.md)）。
+  （時計を混同しない。詳細は [docs/memory-model.md](./memory-model.md) の「三つの時計」）。
 - half-life は Memory 単位の列として持ち、テナント設定はその既定値としてのみ使う
   （テナント全体の half-life 変更が全件再計算を要求しないようにするため）。
 
@@ -440,11 +440,11 @@ interface EventStore {
   `JournalStore` interface が同じ形——`append` / `list` / `get` のみで update/delete が型に存在しない
   ——を採っており、mnemo はこの担保の作り方をそのまま真似る。理由は「運用の規律」ではなく
   **「型に無ければ、実装が間違って消す経路がそもそも生えない」**という静的な担保である
-  （§2、[docs/memory-model.md](./memory-model.md)）。
+  （[docs/memory-model.md](./memory-model.md) の監査ログの節）。
 - 本文は記録しない。記録するのは tenant_id・memory_id・kind・at・actor・digest のスナップショット・
   直前のサイズのみ。
 - `forget()` は `MemoryStore.updateStatus` と `EventStore.append` を同一トランザクションで行う。
-  リポジトリ層を通らない削除経路を作らない（§3.2、§17 の「必ず」の強制）。
+  リポジトリ層を通らない削除経路を作らない（§3.2。「必ず残る」の強制）。
 - 保持期間はテナント単位で設定可能。期限切れの削除自体も `purged` イベントとして残す（件数と
   期間のみ、対象の詳細は残さない）。alteroid の JournalStore には保持期間の概念が無く、mnemo は
   multi-tenant で量が桁違いになるためこれを追加で持つ（[docs/memory-model.md](./memory-model.md)）。
