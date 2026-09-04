@@ -277,6 +277,7 @@ interface MemoryStore {
   createObservation(ctx: Ctx, input: NewObservation): Promise<Observation>;
   createMemory(ctx: Ctx, input: NewMemory): Promise<Memory>;
   get(ctx: Ctx, id: MemoryId): Promise<Memory | null>;
+  getMany(ctx: Ctx, ids: MemoryId[]): Promise<Memory[]>;
   updateStatus(
     ctx: Ctx,
     id: MemoryId,
@@ -284,17 +285,43 @@ interface MemoryStore {
     opts?: { supersededById?: MemoryId }
   ): Promise<Memory>;
   reinforce(ctx: Ctx, id: MemoryId, at: Date): Promise<Memory>;
+  recordUsage(
+    ctx: Ctx,
+    recallId: RecallId,
+    memoryIds: MemoryId[]
+  ): Promise<{ insertedMemoryIds: MemoryId[] }>;
   countByGroup(ctx: Ctx, scope: RecallScope): Promise<GroupCount[]>;
 }
 
 type MemoryStatus = 'active' | 'superseded' | 'contested' | 'archived' | 'forgotten';
 ```
 
+> **D9（2026-09 追記）**: `getMany` と `recordUsage` を足した。
+>
+> - **`getMany`**: recall 段3（矛盾の解決と必須の同伴取得、[docs/recall.md](./recall.md) §2）は
+>   `contested` な Memory ごとに対向する Memory を取得する必要がある。`get` を候補の件数だけ
+>   繰り返し呼ぶ実装は N+1 になり、候補数が多いテナントほど悪化する。`getMany` を interface に
+>   持たせることで、adapter 実装は複数 id の一括取得を単一クエリ（`WHERE id = ANY($1)` 相当）に
+>   できる。
+> - **`recordUsage`**: 「実際に挿入が起きたときだけ強化する」（§3.5・
+>   [docs/memory-model.md](./memory-model.md) §6）という契約は、挿入の成否を呼び出し側が
+>   知る手段を要求する。既存の `reinforce(ctx, id, at)` は「強化してよい」ことが確定した
+>   *後*に呼ぶメソッドであり、「今回の使用報告で実際に何が新規に挿入されたか」（＝何を
+>   強化してよいか）を判定する手段を持たない。`recordUsage` は `recall_usages` への
+>   挿入を行い、実際に新規挿入された `memoryIds` だけを `insertedMemoryIds` として返す。
+>   呼び出し側（runtime の `observe({kind:'memory_usage', ...})` 処理）は
+>   `insertedMemoryIds` に含まれるものだけ `reinforce` を呼ぶ。
+
 契約:
 - `createMemory` は `(tenant_id, source_observation_id, extractor_version, content_hash)` の
   一意制約により冪等（§3.5）。
+- `getMany` は `get` の複数件版。**存在しない・クロステナントの id は結果から静かに除く**
+  （エラーにしない）。呼び出し側が「要求した件数」と「返ってきた件数」の差分から
+  欠落を検知できるようにする（recall 側で `omitted` に変換する）。
 - `reinforce` は挿入が実際に起きたときだけ `last_reinforced_at` / `strength` を更新し、
   `decay_floor_at` を再計算する（§3.5・[docs/memory-model.md](./memory-model.md)）。
+- `recordUsage` は `(recall_id, memory_id)` の一意制約により冪等（§3.5 の使用報告と同じ表）。
+  再送で新規に挿入されなかった id は `insertedMemoryIds` に含めない。
 - `status = 'contested'` の Memory を単独で返す呼び出し側（recall の内部実装）は、対向する
   Memory を**スコアに関係なく必ず一緒に**取得できなければならない（mandatory companion
   retrieval）。これは原則の姿1（争われている主張を、争われていない顔で出さない）の直接の実装であり、
@@ -319,10 +346,19 @@ interface VectorStore {
 }
 
 interface EmbeddingSpaceId {
+  provider: string;
   model: string;
   dimensions: number;
 }
 ```
+
+> **D8（2026-09 追記）**: `EmbeddingSpaceId` に `provider` を足した。この節はもともと
+> `{ model, dimensions }` だけだったが、[docs/memory-model.md](./memory-model.md) の
+> `memory_embeddings_<space>` の節は `<space>` を `(provider, model, dimensions)` の組から
+> 導出すると書いており、この doc 自身と食い違っていた。同じ `model` 名を複数の provider が
+> 使う可能性がある以上（例: 将来 OpenAI 以外が同名のモデル名を使う場合）、テーブル名スラグの
+> 導出元と `EmbeddingSpaceId` の中身は一致しているべきであり、`memory_model.md` 側ではなく
+> こちらを直した。
 
 契約:
 - **`MemoryStore` が真実の源(source of truth)であり、`VectorStore` は再構築可能な派生索引である。**
@@ -336,8 +372,8 @@ interface EmbeddingSpaceId {
   を持つ。recall はこれを「候補にすら上がらなかった件数」として `omitted.kind = 'not_indexed'`
   で報告する——**索引の遅れを黙って無かったことにしない**。原則の姿3そのものの適用である
   （[docs/recall.md](./recall.md)）。
-- **core は埋め込みの次元を知らない。** `EmbeddingSpaceId` は「(モデル, 次元)」の組を単位にし、
-  空間ごとにテーブル（`memory_embeddings_<space>`）を分ける設計を前提とする
+- **core は埋め込みの次元を知らない。** `EmbeddingSpaceId` は「(provider, モデル, 次元)」の組
+  （D8）を単位にし、空間ごとにテーブル（`memory_embeddings_<space>`）を分ける設計を前提とする
   （[docs/decisions/](./decisions/)、pgvector の可変次元列は索引が張れないため）。
 
 ### 5.3 RelationStore — Phase 2（`status`/`superseded_by_id` 列のみ Phase 1）
@@ -411,7 +447,8 @@ type ScoringStrategy = (candidate: ScoringInput) => Score;
 
 type DecayStrategy = {
   strengthAt(now: Date, params: DecayParams): number;
-  floorAt(params: DecayParams, threshold: number): Date;
+  /** threshold を省略すると既定値 0.05 が使われる（ADR 0010）。 */
+  floorAt(params: DecayParams, threshold?: number): Date;
 };
 ```
 
@@ -420,6 +457,9 @@ type DecayStrategy = {
   永続化されない。永続化されるのは書き込み時に一度だけ計算する `decay_floor_at`（単調に増加する
   時刻であり、強化イベントが起きたときだけ再計算される。§3.5・[docs/decisions/](./decisions/) の
   忘却 ADR）。
+- 式とパラメータ（`strengthAt` の指数減衰の形、`floorAt` の既定閾値 0.05、
+  `strength <= threshold` のときに base をそのまま返す境界の扱い）は
+  [ADR 0010](./decisions/0010-decay-parameters.md) に固定してある。
 - 鮮度スコアは `occurred_at ?? recorded_at` を使い、減衰は `last_reinforced_at` を使う
   （時計を混同しない。詳細は [docs/memory-model.md](./memory-model.md) の「三つの時計」）。
 - half-life は Memory 単位の列として持ち、テナント設定はその既定値としてのみ使う

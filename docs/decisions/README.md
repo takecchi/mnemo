@@ -22,3 +22,4 @@ alteroid (github.com/takecchi/alteroid) を根拠として引く箇所は、確�
 | [0007](./0007-tenant-scoping.md) | Tenant scoping | 採用 (2026-09) |
 | [0008](./0008-absence-taxonomy.md) | 「無い」を分類して返す | 採用 (2026-09) |
 | [0009](./0009-usage-feedback-via-observe.md) | 使用フィードバックを observe() で受ける | 採用 (2026-09) |
+| [0010](./0010-decay-parameters.md) | 減衰の式とパラメータを固定する | 採用 (2026-09) |

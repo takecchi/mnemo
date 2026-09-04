@@ -1,0 +1,78 @@
+import { defaultDecayStrategy } from "./decay.js";
+import type { ScoreBreakdown } from "../recall.js";
+
+/**
+ * ScoringStrategy — Phase 1・純関数（docs/architecture.md §5.7、docs/recall.md §7）。
+ *
+ * docs は「減衰 × 類似度 × タグ一致 × 鮮度 × 強度を掛け合わせる」ことと、
+ * 「鮮度スコアは occurred_at ?? recorded_at を使い、減衰は last_reinforced_at を使う」
+ * ことだけを規定し、各要素の具体的な計算式までは規定していない。以下の実装は
+ * その制約の範囲で選んだ Phase 1 の既定であり、`ScoringStrategy` を差し替えれば
+ * 別の式を使える。
+ *
+ * - `decay`（時間減衰）と `strength`（生の強度）を分けて掛ける。`decay` は
+ *   `defaultDecayStrategy.strengthAt` を `strength = 1` で呼んだ時間減衰係数のみを表し、
+ *   生の強度は `total` の計算で別要素として掛ける（二重に強度を織り込まない）。
+ * - `freshness` は同じ減衰関数を `occurredAt ?? recordedAt` を起点に、`strength = 1` で
+ *   呼んで求める（「鮮度は occurred_at ?? recorded_at を使う」という規定を満たす）。
+ * - `tagMatch` はクエリタグが無ければ中立の 1、あれば `1 + 0.1 * 一致数` とし、
+ *   タグが一致しないことで total を 0 に落とさない（タグは加点要素であり除外条件では
+ *   ない、という recall.md §2 の位置づけ——段1のフィルタではなく段2の再スコアである
+ *   ことに合わせた）。
+ * - `similarity` は ANN 経由でない候補では存在しないため、中立の 1 として扱う。
+ */
+export interface ScoringInput {
+  now: Date;
+  /** ANN 経由の場合のみ渡す。0〜1 の類似度（距離から変換済み）。 */
+  similarity?: number;
+  tags: string[];
+  queryTags: string[];
+  occurredAt?: Date | null;
+  recordedAt: Date;
+  lastReinforcedAt?: Date | null;
+  strength: number;
+  halfLifeHours: number;
+}
+
+export type ScoringStrategy = (input: ScoringInput) => ScoreBreakdown;
+
+function computeTagMatch(tags: string[], queryTags: string[]): number {
+  if (queryTags.length === 0) {
+    return 1;
+  }
+  const tagSet = new Set(tags);
+  const matchedCount = queryTags.filter((tag) => tagSet.has(tag)).length;
+  return 1 + matchedCount * 0.1;
+}
+
+export const defaultScoringStrategy: ScoringStrategy = (input) => {
+  const decay = defaultDecayStrategy.strengthAt(input.now, {
+    recordedAt: input.recordedAt,
+    lastReinforcedAt: input.lastReinforcedAt,
+    strength: 1,
+    halfLifeHours: input.halfLifeHours,
+  });
+
+  const freshness = defaultDecayStrategy.strengthAt(input.now, {
+    recordedAt: input.occurredAt ?? input.recordedAt,
+    lastReinforcedAt: null,
+    strength: 1,
+    halfLifeHours: input.halfLifeHours,
+  });
+
+  const tagMatch = computeTagMatch(input.tags, input.queryTags);
+  const similarity = input.similarity;
+  const total = (similarity ?? 1) * decay * tagMatch * freshness * input.strength;
+
+  const score: ScoreBreakdown = {
+    decay,
+    tagMatch,
+    freshness,
+    strength: input.strength,
+    total,
+  };
+  if (similarity !== undefined) {
+    score.similarity = similarity;
+  }
+  return score;
+};
