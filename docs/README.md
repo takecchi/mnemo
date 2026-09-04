@@ -6,6 +6,7 @@
 
 | 文書 | 何が書いてあるか |
 |---|---|
+| [north-star.md](./north-star.md) | **正典。**目的 / 目指す姿 / 物差し / 迷ったときの問い / やらないこと |
 | [vision.md](./vision.md) | このプロジェクトの理解 / 用語整理 / やらないこと / 名前 |
 | [architecture.md](./architecture.md) | 全体アーキテクチャ / package 構成 / 主要 interface |
 | [memory-model.md](./memory-model.md) | DB schema 案 / Memory lifecycle / provenance / 矛盾 / 忘却 / 監査ログ |
@@ -13,6 +14,12 @@
 | [roadmap.md](./roadmap.md) | Phase 1 実装計画 / 技術上のリスク / **まだ判断が必要な点** |
 | [alteroid-findings.md](./alteroid-findings.md) | 設計の材料にした運用知見を現物で検証した記録 |
 | [decisions/](./decisions/) | ADR（重大な設計判断とその理由） |
+
+## 目指しているもの
+
+**LLM アプリケーションに「思い出す」を与えること。「保存する」ではなく。**
+物差しは一つ——**使う側が、会話ログを全部プロンプトへ積むのをやめられたか。**
+詳細は [north-star.md](./north-star.md)（正典）。
 
 ## 全体を貫く一本の原則
 
