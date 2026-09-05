@@ -101,8 +101,11 @@
     [run 33968059262](https://github.com/takecchi/mnemora/actions/runs/33968059262)。
     出力に「DATABASE_URL が設定されているため、DB テストを実行します」と
     「✔ DB テストも実行し、通りました。」が両方出て、それを `grep` が拾って緑になっている。
-    所要 1 分 36 秒で、同じ run の `postgres` ジョブ（1 分 38 秒）と同程度——
-    壁時計のボトルネックは変わっていない。
+    所要は 2 回の run で 1 分 36 秒 / 1 分 43 秒、同じ run の `postgres` ジョブは
+    1 分 38 秒 / 1 分 33 秒——**ほぼ同着で、2 回目ではこのジョブが最長になった。**
+    ジョブは並列に走るので、**壁時計の増分は 0〜十数秒**にとどまる（延べの
+    runner 時間は 1 回あたり約 1 分 40 秒増える。既存の 2 ジョブが走らせている
+    `test:db` を、この段を経由してもう一度走らせるため）。
   - **この段の「DB 在りで緑」は、本物の PostgreSQL に対して実測した。**
     CI の service container（`pgvector/pgvector:pg17`）と、手元の
     PostgreSQL 18.6 + pgvector 0.8.6 の両方で、`DATABASE_URL` 在りの
