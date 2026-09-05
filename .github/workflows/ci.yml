@@ -155,3 +155,85 @@ jobs:
 
       - name: Run examples/chat の observe→recall 往復・量の比較テストを本物の DB に対して実行
         run: pnpm --filter @mnemora/example-chat run test:db
+
+  root-gate-db-stage:
+    name: ルートの test 門の DB 段（DATABASE_URL 在りで順方向に実測、ADR 0015）
+    runs-on: ubuntu-latest
+    # ADR 0015「ルートの test 門は、DB テストを『走らせなかった』と明示する」の
+    # 「確かめていないこと」1・2つ目を塞ぐジョブ。
+    #
+    # ルートの `pnpm run test` は最後に `node scripts/run-db-tests.mjs` を呼ぶ
+    # （DATABASE_URL が無ければ「実行していません」と告知して緑、在れば
+    # `pnpm -r --if-present run test:db` を走らせて、落ちれば赤・通れば
+    # 「✔ DB テストも実行し、通りました。」で緑になる段）。
+    # `postgres` / `example-chat` ジョブは `test:db` を各パッケージに直接呼んでおり、
+    # この段そのものを一度も経由しない。つまり「DATABASE_URL 在りでこの段が
+    # 実際に走って緑になる」ことは、CI ではまだ誰も実測していなかった。
+    # このジョブはその1点だけを測る——DB テストそのものの合否は上の2ジョブの役目のまま
+    # （置き換えない）。
+    #
+    # 「ルートの test がこの段を呼ぶ配線」自体は、
+    # scripts/__tests__/run-db-tests.test.mjs の「ルートの test 門の配線」が
+    # package.json の scripts.test を静的に検査して常時押さえている。
+    # ここではその配線ではなく、段そのものの実行結果（DATABASE_URL 在り・
+    # 対象パッケージが全部通ったときに実際に緑になること）を実測する。
+    # 歯（配線・未設定側・落ちた側）とこのジョブ（順方向の実物）とで役割を分けている。
+    #
+    # `pnpm run test` 全体ではなく DB 段だけを直接呼ぶ: 型検査・lint・format・
+    # 各パッケージの単体テスト・build は `build` ジョブがすでに測っており、
+    # ここで二重に走らせて時間を伸ばさない。
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mnemora_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mnemora_ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Enable required extensions (vector / btree_gin / pgcrypto)
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d mnemora_ci -c "select 1;" \
+            && PGPASSWORD=postgres psql -h localhost -U postgres -d mnemora_ci \
+              -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+              -c "CREATE EXTENSION IF NOT EXISTS btree_gin;" \
+              -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Build @mnemora/core (postgres package depends on it)
+        run: pnpm --filter @mnemora/core run build
+
+      - name: Run migrations (packages/postgres の唯一のマイグレーション実行口)
+        run: pnpm --filter @mnemora/postgres run migrate
+
+      - name: ルートの門の DB 段を DATABASE_URL 在りで通す（順方向の実測）
+        run: |
+          set -euo pipefail
+          node scripts/run-db-tests.mjs 2>&1 | tee gate.log
+          grep -F "DB テストを実行します" gate.log
+          grep -F "✔ DB テストも実行し、通りました。" gate.log
+          if grep -F "DB テストは実行していません" gate.log; then
+            echo "DB 段が未実行の側へ落ちた" >&2
+            exit 1
+          fi

@@ -82,6 +82,19 @@
   - 門の歯（`scripts/__tests__/run-db-tests.test.mjs`）は、**本物の門を子プロセスとして
     起動する**。擬似の実行器に差し替えると「門が本当に DB テストを呼ぶか」を
     測れなくなるためだが、代償として歯の実行に十数秒かかる。
+  - `.github/workflows/ci.yml` に `root-gate-db-stage` ジョブを追加した。
+    pgvector の service container を持ち、`DATABASE_URL` を設定した状態で
+    `node scripts/run-db-tests.mjs`（ルートの門の DB 段そのもの）を直接実行し、
+    出力に「DB テストを実行します」と「✔ DB テストも実行し、通りました。」が
+    両方出ること・「DB テストは実行していません」が出ないことを検査する。
+    既存の `postgres` / `example-chat` ジョブ（`test:db` を各パッケージへ直接呼ぶ、
+    DB テストそのものの合否を測るジョブ）は置き換えていない。新設したのは、
+    それとは別の「ルートの門の DB 段が、DATABASE_URL 在りで実際に走って緑になるか」
+    という、下の「確かめていないこと」1・2つ目を塞ぐための実測である。
+    既存ジョブへ段を足すのではなく並列の別ジョブにしたのは、`postgres` job
+    （直列に足すと今のボトルネックへそのまま積み増しになる）を避け、
+    壁時計上の増分を既存ジョブの所要時間の範囲に収めるため
+    （実測値は PR 本文を参照）。
 
 - **これが覆るとしたら**:
 
@@ -95,14 +108,18 @@
 
 - **確かめていないこと**:
 
-  - 「`DATABASE_URL` が在って DB テストが全部通るときに門が緑である」ことに、
-    **永続的な自動の歯は無い**。CI の `postgres` / `example-chat` ジョブは
-    `test:db` を直接呼ぶため、この段を経由しない。
-    逆向き（DB 段が呼ばれなくなる・落ちても赤くならない）は歯が押さえている。
-  - CI 上でこの段が走ること自体は確認した（PR #10 の
-    `typecheck / lint / test / build` ジョブに「DB テストは実行していません」の
-    告知が出て、ジョブは緑）。ただし**CI 上で `DATABASE_URL` を設定して
-    この段を通した実測は無い**——前項と同じ穴である。
+  - 「永続的な自動の歯が無い」こと自体は、上記「結果」に書いた `root-gate-db-stage`
+    ジョブで塞いだ——push・PR のたびに走り、順方向（`DATABASE_URL` 在り・対象
+    パッケージが全部通ったときにこの段が緑になること）を測る。ただし歯（vitest の
+    unit test）ではなく**CI ジョブ**であることは区別しておく——手元で恒常的に
+    再現する歯ではなく、GitHub Actions の environment でだけ走る。逆向き（DB 段が
+    呼ばれなくなる・落ちても赤くならない）は引き続き
+    `scripts/__tests__/run-db-tests.test.mjs` の歯が押さえている。
+  - **このジョブが実際に GitHub Actions 上で緑になることは、この文書を更新した
+    作業者自身は確認していない。**作業環境に push 権限も本物の Postgres も無く
+    （本項目3つ目と同じ制約）、手元では `DATABASE_URL` を設定した状態での
+    `node scripts/run-db-tests.mjs` の実行を検証できなかった。**push した後に、
+    このジョブが実際に緑になることを確認する必要がある**（次の作業）。
   - **この段の「DB 在りで緑」を実測した DB は、本物の PostgreSQL ではなく
     PGlite（WASM 実装）である。**作業環境に docker も postgres も root 権限も
     無かったため。pgvector・HNSW・`EXPLAIN` を含め `packages/postgres` の
