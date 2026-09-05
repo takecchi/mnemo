@@ -5,8 +5,8 @@
 - **文脈**:
   `docs/decisions/0004-decay-at-query-time.md` の強化(reinforcement)は「実際に使われた」記憶だけを
   対象にする。検索に出ただけでは強化しない。そのためには、recall が返した候補のうち、呼び出し側
-  （LLM・アプリケーション）が実際にどれを使ったかを mnemo に伝え返す経路が必要になる。
-  一方で mnemo の API 表面は5つの動詞（`observe` / `recall` / `reflect` / `consolidate` / `forget`）
+  （LLM・アプリケーション）が実際にどれを使ったかを mnemora に伝え返す経路が必要になる。
+  一方で mnemora の API 表面は5つの動詞（`observe` / `recall` / `reflect` / `consolidate` / `forget`）
   に固定する方針であり、6つ目を安易に足さない。この制約の中でどう受けるかを決める必要がある。
 
 - **決定**:
@@ -22,7 +22,7 @@
 - **検討した選択肢**:
   - **`recall()` の戻り値にメソッドを生やす**（例: `result.markUsed(memoryIds)` のような API）:
     呼び出し側にとって直感的ではあるが、**戻り値がメソッドを持つ時点でシリアライズできず、
-    HTTP 越しに使えなくなる。**mnemo は Phase 4 で `packages/server`（HTTP）と `packages/sdk`
+    HTTP 越しに使えなくなる。**mnemora は Phase 4 で `packages/server`（HTTP）と `packages/sdk`
     （クライアント）を持つ計画であり、`recall()` の戻り値が将来 JSON としてネットワークを
     越える必要がある。メソッドを生やす設計は、この時点で確実に破綻する。**これが却下の決定打。**
   - **6つ目の動詞 `reinforce()` を足す**: 意味は明確になるが、「動詞を5つに保つ」という

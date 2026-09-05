@@ -11,7 +11,7 @@ recall の詳細は [docs/recall.md](./recall.md)、フェーズ計画は [docs/
 
 **文脈を剥がして提示しない (Qualified Presentation)。**
 
-これは mnemo のどの機能よりも先にある規律で、三つの姿で現れる。
+これは mnemora のどの機能よりも先にある規律で、三つの姿で現れる。
 
 1. **争われている主張は、それを争う相手と必ず同時に提示する**（矛盾の扱い）
 2. **推論は、その根拠と必ず同時に提示する**（provenance）
@@ -28,26 +28,26 @@ recall の詳細は [docs/recall.md](./recall.md)、フェーズ計画は [docs/
 
 ### 3.1 層
 
-mnemo は既存の LLM アプリケーションの**下に敷く**認知レイヤーであり、エージェントフレームワークの
+mnemora は既存の LLM アプリケーションの**下に敷く**認知レイヤーであり、エージェントフレームワークの
 代替ではない。
 
 ```
-┌───────────────────────────────────────────────┐
+┌────────────────────────────────────────────────┐
 │ Application                                    │
-├───────────────────────────────────────────────┤
+├────────────────────────────────────────────────┤
 │ Agent / LLM フレームワーク（LangGraph, Mastra, 自作 …） │
-├───────────────────────────────────────────────┤
-│ mnemo Cognitive Runtime                        │  ← mnemo はここ
+├────────────────────────────────────────────────┤
+│ mnemora Cognitive Runtime                      │  ← mnemora はここ
 │   observe / recall / reflect                   │
 │   consolidate / forget                         │
-├───────────────────────────────────────────────┤
+├────────────────────────────────────────────────┤
 │ Storage（Postgres）│ LLM（OpenAI/Anthropic）│ Queue（BullMQ）│
-└───────────────────────────────────────────────┘
+└────────────────────────────────────────────────┘
 ```
 
-Application と Agent/LLM は mnemo の**利用側**であり、mnemo が知る必要はない。mnemo が知るのは
+Application と Agent/LLM は mnemora の**利用側**であり、mnemora が知る必要はない。mnemora が知るのは
 Runtime とその下（Storage / LLM / Queue の interface）だけである。プロンプトの組み立ては呼び出し側の
-責務であり mnemo は行わない（この限界は [docs/recall.md](./recall.md) で詳説）。
+責務であり mnemora は行わない（この限界は [docs/recall.md](./recall.md) で詳説）。
 
 ### 3.2 Runtime 内部 — 5 つの動詞がどこを通るか
 
@@ -166,8 +166,8 @@ digest 安全弁と対になる）。
 - 全テーブルで `tenant_id` は **NOT NULL**、全ての一意制約・索引の**先頭列**に置く。
 - core の全 interface は第一引数に **`ctx: { tenantId, subjectId? }`** を取る。暗黙の・グローバルな
   テナント状態を runtime もモジュールスコープも持たない。
-- **mnemo はテナントの台帳を持たない。** `tenantId` は呼び出し側が渡す**不透明な文字列**であり、
-  認証・ユーザー管理は mnemo の仕事ではない。
+- **mnemora はテナントの台帳を持たない。** `tenantId` は呼び出し側が渡す**不透明な文字列**であり、
+  認証・ユーザー管理は mnemora の仕事ではない。
 - Postgres の RLS は**追加防御**として adapter 側のオプションに位置づける。一次的な分離保証は
   「ctx を引き回すこと」と「索引の先頭列が tenant_id であること」に置く。RLS を一次防御にすると、
   RLS を設定していない Store 実装（将来別 DB で書かれた adapter）で保証がまるごと消えるため。
@@ -531,7 +531,7 @@ interface EventStore {
 契約:
 - **`update` / `delete` を意図的に持たせない。** append-only。alteroid（github.com/takecchi/alteroid）の
   `JournalStore` interface が同じ形——`append` / `list` / `get` のみで update/delete が型に存在しない
-  ——を採っており、mnemo はこの担保の作り方をそのまま真似る。理由は「運用の規律」ではなく
+  ——を採っており、mnemora はこの担保の作り方をそのまま真似る。理由は「運用の規律」ではなく
   **「型に無ければ、実装が間違って消す経路がそもそも生えない」**という静的な担保である
   （[docs/memory-model.md](./memory-model.md) の監査ログの節）。
 - 本文は記録しない。記録するのは tenant_id・memory_id・kind・at・actor・digest のスナップショット・
@@ -539,7 +539,7 @@ interface EventStore {
 - `forget()` は `MemoryStore.updateStatus` と `EventStore.append` を同一トランザクションで行う。
   リポジトリ層を通らない削除経路を作らない（§3.2。「必ず残る」の強制）。
 - 保持期間はテナント単位で設定可能。期限切れの削除自体も `purged` イベントとして残す（件数と
-  期間のみ、対象の詳細は残さない）。alteroid の JournalStore には保持期間の概念が無く、mnemo は
+  期間のみ、対象の詳細は残さない）。alteroid の JournalStore には保持期間の概念が無く、mnemora は
   multi-tenant で量が桁違いになるためこれを追加で持つ（[docs/memory-model.md](./memory-model.md)）。
 
 ### 5.9 TokenCounter — Phase 1
@@ -567,7 +567,7 @@ interface Clock {
 - `ScoringStrategy` / `DecayStrategy` は `now` を引数として受け取る純関数であり、`Clock` を
   直接は使わない。`Clock` は runtime が「現在時刻」を取得する唯一の場所であり、テストで固定時刻を
   注入できるようにするための境界。alteroid・オーナー案のどちらにも無いが、multi-tenant・複数
-  インスタンスで動く mnemo では時刻取得を暗黙に `new Date()` へ散らさないための最小限の追加である。
+  インスタンスで動く mnemora では時刻取得を暗黙に `new Date()` へ散らさないための最小限の追加である。
 
 ### 5.11 OutboxStore — Phase 1（roadmap.md 段階3で追加、ADR 0012 D-ingest-2）
 
@@ -620,7 +620,7 @@ interface Sensor {
 }
 
 interface SpeechPolicy {
-  // Phase 3。「いつ mnemo 側から話しかけてよいか」の詰めはまだ無い。
+  // Phase 3。「いつ mnemora 側から話しかけてよいか」の詰めはまだ無い。
 }
 ```
 

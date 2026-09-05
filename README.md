@@ -1,4 +1,4 @@
-# mnemo
+# mnemora
 
 **既存の LLM アプリケーションの下に敷く「認知レイヤー」。**
 
@@ -60,7 +60,9 @@ await brain.forget()
 `packages/openai`、`packages/testkit`（適合テスト）、`examples/chat`（サンプル CLI）がある。
 Phase 1 の範囲と、そこに入れなかったものは [docs/roadmap.md](./docs/roadmap.md) を参照。
 
-**まだ 0.x であり、公開 API は動く。**名前（`mnemo` / `@mnemo/*`）も暫定のままである。
+**まだ 0.x であり、公開 API は動く。**名前は `mnemora`（`@mnemora/*`）に確定しており、
+暫定ではない（経緯は [docs/vision.md](./docs/vision.md) の「名前について」と
+[ADR 0014](./docs/decisions/0014-package-name-mnemora.md)）。
 
 | 文書 | 何が書いてあるか |
 |---|---|
@@ -96,7 +98,5 @@ forget(ctx, target)      // 記憶を落とす / 失効させる
 
 ## ⚠ 暫定
 
-- **名前は仮**（`mnemo` / `@mnemo/*`）。unscoped の `mnemo` は npm に別のパッケージが既にある。
-  経緯は [docs/vision.md](./docs/vision.md) の「名前について」を見ること
 - **ここに書かれているのは設計であって、実装された事実ではない。**
   実装の進み具合は [docs/roadmap.md](./docs/roadmap.md) を見ること

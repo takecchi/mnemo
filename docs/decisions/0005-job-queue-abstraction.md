@@ -4,7 +4,7 @@
 
 - **文脈**:
   `reflect` / `consolidate` の背景実行、および `observe(extract: 'deferred')` の非同期抽出は、
-  何らかのジョブキューを必要とする。一方で mnemo は Postgres を必須要件としているが、Redis のような
+  何らかのジョブキューを必要とする。一方で mnemora は Postgres を必須要件としているが、Redis のような
   追加ミドルウェアは必須にしたくない（`docs/vision.md` の「やらないこと」に対応する制約意識、
   および Phase 1 を最小構成で成立させる方針）。キューの実装をどう選び、どう抽象化するかを決める必要がある。
 
@@ -14,7 +14,7 @@
     および `docs/decisions/0003-memorystore-vs-vectorstore.md` と同種の「差し替え可能性」の要求に反する。
     Redis を持たない構成（Phase 1 の最小構成）を作れなくなる。却下。
   - **`Scheduler` interface を切り、リファレンス実装は BullMQ**: 採用（下記）。
-  - **`pg-boss` を唯一の実装にする**: mnemo が Postgres を必須にしている以上、Redis を増やさずに済む
+  - **`pg-boss` を唯一の実装にする**: mnemora が Postgres を必須にしている以上、Redis を増やさずに済む
     という利点は大きい。実際、`pg-boss` は有力な代替として繰り返し挙がった。ただし BullMQ は 2026 時点
     でも活発に開発が続いており、既に広く使われている実績がある。**どちらか一方だけを唯一の実装にする
     必然性が無い**——`Scheduler` interface を切ってあれば両方を adapter として持てる。「`pg-boss` のみ」を
@@ -22,7 +22,7 @@
 
 - **決定**:
   `Scheduler` interface を切る。リファレンス実装は **BullMQ**（`packages/bullmq`）とする。
-  **`pg-boss` を一級の代替として明記する。**mnemo は Postgres を必須としているが Redis は必須ではないため、
+  **`pg-boss` を一級の代替として明記する。**mnemora は Postgres を必須としているが Redis は必須ではないため、
   Redis を増やしたくない構成では `pg-boss` ベースの adapter を選べる余地を最初から用意する。
 
   パッケージ名はオーナー案の `redis` から **`bullmq`** に改名した。依存の中心は Redis というミドルウェア
@@ -30,7 +30,7 @@
   使う用途（キャッシュ等）は Phase 3 まで発生せず、パッケージ名を実際に依存している役割に合わせた。
 
 - **理由**:
-  1. mnemo の必須インフラは Postgres であり、Redis はオプションでありたい。`Scheduler` を interface
+  1. mnemora の必須インフラは Postgres であり、Redis はオプションでありたい。`Scheduler` を interface
      化すれば、Redis を持たない構成（`InlineScheduler`。下記）と、Redis を持つ構成（BullMQ）の
      どちらも同じ core の上で成立する。
   2. **transactional outbox（`docs/architecture.md` §3.4）により、キューは「outbox を運ぶ役」に
@@ -41,7 +41,7 @@
      outbox の書き込み契約自体は変わらない。
   3. BullMQ は活発に保守されており、Node.js エコシステムでの実績が長い。`pg-boss` は Postgres
      依存を増やさないという明確な利点を持つ代替であり、どちらを選ぶかは運用環境（Redis を既に
-     持っているか）に依存する判断であって、mnemo の設計が強制すべきことではない。
+     持っているか）に依存する判断であって、mnemora の設計が強制すべきことではない。
 
 - **DB トランザクションの中から外部システムへ直接書かない理由**:
   `observe()` のトランザクション内で Redis（BullMQ）や Postgres 外のキューへ直接エンキューすると、

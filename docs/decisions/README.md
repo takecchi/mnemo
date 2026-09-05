@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-mnemo の設計判断のうち、**後から見て「なぜそうしたか」を追える形で残す必要があるもの**を
+mnemora の設計判断のうち、**後から見て「なぜそうしたか」を追える形で残す必要があるもの**を
 ADR (Architecture Decision Record) として記録する。`docs/architecture.md` や
 `docs/memory-model.md` 等の他の docs が「何がどう決まっているか」を記述するのに対し、
 ここでは各決定について、検討した選択肢・却下した理由・引き受ける負債・覆る条件までを
@@ -26,3 +26,4 @@ alteroid (github.com/takecchi/alteroid) を根拠として引く箇所は、確�
 | [0011](./0011-no-window-count-in-ann-stage.md) | 段1の ANN クエリに `count(*) OVER ()` を入れない | 採用 (2026-09) |
 | [0012](./0012-ingest-pipeline-design.md) | 取り込みパイプライン（`observe()` / `runtime.tick()`）の実装方針 | 採用 (2026-09) |
 | [0013](./0013-extraction-outcome-taxonomy.md) | 抽出の失敗を、成功と同じ顔で記録しない | 採用 (2026-09) |
+| [0014](./0014-package-name-mnemora.md) | 名前を `mnemora` / `@mnemora/*` に確定する | 採用 (2026-09) |

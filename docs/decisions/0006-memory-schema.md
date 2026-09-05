@@ -3,7 +3,7 @@
 - **状態**: 採用 (2026-09)
 
 - **文脈**:
-  Memory は mnemo の中心的なデータであり、矛盾の扱い・provenance・時刻・監査・冪等という複数の
+  Memory は mnemora の中心的なデータであり、矛盾の扱い・provenance・時刻・監査・冪等という複数の
   要求が1つのスキーマに集約される。**この ADR はスキーマの DDL 自体を扱わない**（DDL は
   `docs/memory-model.md` を参照）。ここに書くのは **なぜその形にしたか** という判断の記録である。
 
@@ -13,7 +13,7 @@
     SQL レベルで表現できなくなる。recall の二段検索（`0004-decay-at-query-time.md`）は索引が効く
     フィルタを要求するため、JSON への格納はこの要求と正面から衝突する。却下。
   - **Memory を Markdown 文書単位にする**（alteroid 方式）: alteroid (github.com/takecchi/alteroid) は
-    記憶を Markdown ファイル + frontmatter として持ち、人間が直接編集できる。**mnemo ではこの方式を
+    記憶を Markdown ファイル + frontmatter として持ち、人間が直接編集できる。**mnemora ではこの方式を
     採らない。**理由は下記「決定」参照（alteroid の現物調査は
     [docs/alteroid-findings.md](../alteroid-findings.md) の主張Aを参照）。
   - **列で持つべき情報を絞り、大半を関連テーブル（イベント、関係）に逃がす**: 採用（下記の設計方針）。
@@ -34,7 +34,7 @@
   持たせるコストの方が低いため。
 
   **三つの時計（`occurred_at` / `recorded_at` / `last_reinforced_at`）を分ける。**
-  `occurred_at` はその出来事・事実がいつのものか（不明なら NULL 可）、`recorded_at` は mnemo が
+  `occurred_at` はその出来事・事実がいつのものか（不明なら NULL 可）、`recorded_at` は mnemora が
   いつ知ったか（NOT NULL）、`last_reinforced_at` は最後に実際に使われたのはいつか、を表す。
   混ぜて1つの「時刻」にすると後から分離できない。**鮮度スコアは `occurred_at ?? recorded_at` を
   使い、減衰は `last_reinforced_at` を使う。**この2つは別の目的の時刻であり、同じ列を使い回すと
@@ -49,8 +49,8 @@
   **`digest` を NOT NULL にする。**
   alteroid では要旨（`description`）は書き手が frontmatter に手書きするものであり、書かれていない
   場合は固定文言「（要旨なし）」が使われる（先頭 N 文字への機械的フォールバックすら無い）。
-  **mnemo は digest を抽出時に LLM で生成し、NOT NULL とする。**これは alteroid と意図的に異なる
-  設計判断である。理由: mnemo は人手による編集を前提にしないパイプライン（`observe → extract`）で
+  **mnemora は digest を抽出時に LLM で生成し、NOT NULL とする。**これは alteroid と意図的に異なる
+  設計判断である。理由: mnemora は人手による編集を前提にしないパイプライン（`observe → extract`）で
   Memory を作るため、「書き手が要旨を書き忘れる」という状況自体が起こらない設計にする方が、
   目次帯（`docs/decisions/0008-absence-taxonomy.md` および `docs/recall.md`）の被覆不変条件を
   常に成立させやすい（詳細は [docs/alteroid-findings.md](../alteroid-findings.md) 主張A参照）。
@@ -66,9 +66,9 @@
 
 - **却下した案（再掲・理由の要約）**:
   - 単一 JSON カラム: フィルタ・索引の要求と衝突するため却下。
-  - Markdown 文書単位（alteroid 方式）: mnemo は人手編集を前提にせず、抽出パイプラインで機械的に
+  - Markdown 文書単位（alteroid 方式）: mnemora は人手編集を前提にせず、抽出パイプラインで機械的に
     Memory を作る。また Markdown 文書単位は粒度が粗く、強化・忘却を Memory 単位（個々の事実・主張の
-    単位）で効かせたい mnemo の要求と合わない。1つの Markdown 文書に複数の主張が混在すると、
+    単位）で効かせたい mnemora の要求と合わない。1つの Markdown 文書に複数の主張が混在すると、
     その一部だけを `superseded` にする、その一部だけを強化する、といった操作ができなくなる。
 
 - **結果（この決定が招くもの）**:
@@ -82,7 +82,7 @@
 - **これが覆るとしたら**:
   - Memory の粒度を意図的に粗くしたい利用ケース（人手で管理する少数の長文記憶が中心の用途）が
     主要なユースケースとして浮上したら、Markdown 文書単位に近い形の代替スキーマを別 adapter として
-    検討する余地はある。ただしそれは mnemo の core スキーマの変更ではなく、別の抽象レベルでの対応になる。
+    検討する余地はある。ただしそれは mnemora の core スキーマの変更ではなく、別の抽象レベルでの対応になる。
 
 - **確かめていないこと**:
   - digest 生成の LLM コスト・品質が、抽出パイプライン全体のボトルネックになるかどうかは、
