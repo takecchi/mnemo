@@ -5,13 +5,13 @@ import type { ClaimOutboxJobsOptions, OutboxStore } from "../interfaces/outbox-s
 import type { OutboxJobKind } from "../interfaces/scheduler.js";
 import type { TenantSettingsStore } from "../interfaces/tenant-settings-store.js";
 import type { VectorStore, VectorFilter, VectorHit } from "../interfaces/vector-store.js";
-import type { MemoryId, ObservationId } from "../ids.js";
+import type { MemoryId, ObservationId, RecallId } from "../ids.js";
 import type { EmbeddingStatus, Memory, MemoryStatus, NewMemory } from "../memory.js";
 import type { NewObservation, Observation } from "../observation.js";
 import type { MemoryEvent, NewMemoryEvent, EventFilter } from "../event.js";
 import type { EventId } from "../ids.js";
 import type { MemoryStore } from "../interfaces/memory-store.js";
-import type { GroupCount, RecallScope } from "../recall.js";
+import type { NewRecallRecord, RecallScope, ScopeAggregate } from "../recall.js";
 import type { EmbeddingSpaceId } from "../embedding.js";
 import type { OutboxJobRecord } from "../outbox.js";
 import { defaultDecayStrategy } from "../strategies/decay.js";
@@ -38,6 +38,7 @@ class FakeBackingStore {
   memories = new Map<string, Memory>();
   extractionIndex = new Map<string, MemoryId>();
   usages = new Set<string>();
+  recalls = new Map<string, NewRecallRecord & { tenantId: string }>();
   outboxJobs: OutboxJobMutable[] = [];
 
   extractionKey(
@@ -267,20 +268,68 @@ export class FakeMemoryStore implements MemoryStore {
     return { insertedMemoryIds };
   }
 
-  async countByGroup(ctx: Ctx, scope: RecallScope): Promise<GroupCount[]> {
-    const counts = new Map<string | null, number>();
+  async aggregateScope(ctx: Ctx, scope: RecallScope): Promise<ScopeAggregate> {
+    const inScopeBySubject = new Map<string | null, number>();
+    let totalInScope = 0;
+    let notIndexed = 0;
+    let filteredArchived = 0;
+    let filteredStatus = 0;
+    let filteredPeriod = 0;
+
     for (const memory of this.backing.memories.values()) {
       if (memory.tenantId !== ctx.tenantId) continue;
       if (scope.subjectId !== undefined && memory.subjectId !== scope.subjectId) continue;
+
+      if (memory.status === "archived") {
+        filteredArchived += 1;
+        continue;
+      }
+      if (memory.status === "superseded" || memory.status === "forgotten") {
+        filteredStatus += 1;
+        continue;
+      }
+
+      const effectiveTime = memory.occurredAt ?? memory.recordedAt;
+      const inPeriod =
+        (scope.occurredAfter === undefined || effectiveTime >= scope.occurredAfter) &&
+        (scope.occurredBefore === undefined || effectiveTime <= scope.occurredBefore);
+      if (!inPeriod) {
+        filteredPeriod += 1;
+        continue;
+      }
+
+      totalInScope += 1;
       const key = memory.subjectId ?? null;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      inScopeBySubject.set(key, (inScopeBySubject.get(key) ?? 0) + 1);
+      if (memory.embeddingStatus !== "ready") {
+        notIndexed += 1;
+      }
     }
-    return [...counts.entries()].map(([key, count]) => ({
-      axis: "subject" as const,
-      key,
-      count,
-      countKind: "exact" as const,
-    }));
+
+    const groups: ScopeAggregate["groups"] = [...inScopeBySubject.entries()].map(
+      ([key, count]) => ({
+        axis: "subject" as const,
+        key,
+        count,
+        countKind: "exact" as const,
+      }),
+    );
+
+    return {
+      groups,
+      totalInScope,
+      countKind: "exact",
+      notIndexed: { count: notIndexed, countKind: "exact" },
+      filteredArchived: { count: filteredArchived, countKind: "exact" },
+      filteredStatus: { count: filteredStatus, countKind: "exact" },
+      filteredPeriod: { count: filteredPeriod, countKind: "exact" },
+    };
+  }
+
+  async createRecall(ctx: Ctx, record: NewRecallRecord): Promise<RecallId> {
+    const id = nextId("rcl");
+    this.backing.recalls.set(id, { ...record, tenantId: ctx.tenantId });
+    return id;
   }
 }
 
@@ -322,8 +371,37 @@ export class FakeOutboxStore implements OutboxStore {
   }
 }
 
+/**
+ * cosine 距離（pgvector の `<=>` 演算子と同じ定義: `1 - cosine_similarity`）。
+ * `packages/postgres` の `PostgresVectorStore.search` が実際に使う演算子と同じ式にする
+ * ——recall のテストが「本物の pgvector とスコアの意味が違う」という食い違いを生まないため。
+ */
+function cosineDistance(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += (a[i] ?? 0) * (b[i] ?? 0);
+    normA += (a[i] ?? 0) ** 2;
+    normB += (b[i] ?? 0) ** 2;
+  }
+  if (normA === 0 || normB === 0) {
+    return 1; // 無関係（類似度0）として扱う。ゼロベクトル同士の割り算を避ける。
+  }
+  const similarity = dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  return 1 - similarity;
+}
+
+/**
+ * `FakeVectorStore` は `packages/core` 自身のテスト用であり `@mnemo/testkit` に依存しない
+ * （このファイル冒頭のコメント参照）。recall のテストが意味のある結果を得られるよう、
+ * `upsert` されたベクトルに対して実際に cosine 距離で ANN を模する
+ * （`FakeBackingStore.memories` を参照して `status` フィルタも本物同様に適用する）。
+ */
 export class FakeVectorStore implements VectorStore {
   entries = new Map<string, { tenantId: string; memoryId: MemoryId; vector: number[] }>();
+
+  constructor(private readonly backing?: FakeBackingStore) {}
 
   private key(space: EmbeddingSpaceId, tenantId: string, memoryId: MemoryId): string {
     return `${space.provider}:${space.model}:${space.dimensions}:${tenantId}:${memoryId}`;
@@ -343,12 +421,26 @@ export class FakeVectorStore implements VectorStore {
   }
 
   async search(
-    _ctx: Ctx,
+    ctx: Ctx,
     _space: EmbeddingSpaceId,
-    _query: number[],
-    _opts: { limit: number; filter: VectorFilter },
+    query: number[],
+    opts: { limit: number; filter: VectorFilter },
   ): Promise<VectorHit[]> {
-    return [];
+    const hits: VectorHit[] = [];
+    for (const entry of this.entries.values()) {
+      if (entry.tenantId !== opts.filter.tenantId || entry.tenantId !== ctx.tenantId) continue;
+      if (opts.filter.status !== undefined && this.backing) {
+        const memory = this.backing.memories.get(entry.memoryId);
+        if (!memory || !opts.filter.status.includes(memory.status)) continue;
+      }
+      if (opts.filter.decayFloorAtAfter !== undefined && this.backing) {
+        const memory = this.backing.memories.get(entry.memoryId);
+        if (!memory || memory.decayFloorAt <= opts.filter.decayFloorAtAfter) continue;
+      }
+      hits.push({ memoryId: entry.memoryId, distance: cosineDistance(query, entry.vector) });
+    }
+    hits.sort((a, b) => a.distance - b.distance);
+    return hits.slice(0, opts.limit);
   }
 
   async delete(ctx: Ctx, space: EmbeddingSpaceId, memoryId: MemoryId): Promise<void> {
@@ -422,7 +514,7 @@ export function createFakeRuntimeStores(): {
   return {
     memoryStore: new FakeMemoryStore(backing),
     outboxStore: new FakeOutboxStore(backing),
-    vectorStore: new FakeVectorStore(),
+    vectorStore: new FakeVectorStore(backing),
     eventStore: new FakeEventStore(),
     tenantSettingsStore: new FakeTenantSettingsStore(),
     embeddingProvider: new FakeEmbeddingProvider(),

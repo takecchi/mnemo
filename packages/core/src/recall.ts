@@ -172,6 +172,56 @@ export const IndexBandSchema = z.object({
 }) satisfies z.ZodType<IndexBand>;
 
 // ---------------------------------------------------------------------------
+// スコープの外延（マネージャー決定。docs/recall.md §2 段0・§5 の欠けていた定義の補完）
+// ---------------------------------------------------------------------------
+
+/**
+ * `recall()` のスコープ = tenant + subject + 時間窓(period) + taxonomy + status ゲート。
+ *
+ * **マネージャー決定（本 PR）**: docs/recall.md §5 は被覆不変条件を「スコープ内の全 Memory は、
+ * 返るか群カウントに乗るかのどちらか。かつ総和がスコープ内の総数と一致する」と定めるが、
+ * 「スコープ」の外延がどこにも確定していなかった（§2 段0は tenant/subject/時間窓/taxonomy と
+ * 書いて status に触れず、§4 の `FilteredOmission.condition` には `'status'`/`'archived'` が
+ * 在るという食い違い）。この型はその補完——status ゲート（段1と同じ
+ * `status IN ('active','contested')`）をスコープの一部として確定する決定を反映する。
+ *
+ * **tenant と subject はスコープの外側の境界であり、`filtered` としては報告しない**
+ * （`FilteredOmission.condition` に `'tenant'`/`'subject'` の値が無いことと対応する。
+ * ちょうど「別テナントのデータ」を omission として報告しないのと同じ理由——呼び出し側が
+ * 明示した境界の外は「失われた」のではなく「そもそも問うていない」）。
+ * **period・status（archived / それ以外）が実際に `filtered` として報告される次元である。**
+ * taxonomy は Phase 1 に実体が無い（labels テーブルは Phase 2、docs/memory-model.md §8）ため、
+ * この集約では常に発生しない（型としての `FilteredOmission.condition: 'taxonomy'` は
+ * Phase 2 向けに残す）。
+ *
+ * **件数はすべてこの集約1本から取る**（ADR 0011 が段1から締め出した
+ * `count(*) OVER ()` の代わりに指定した経路と同じ発想）。`groups` の総和・`totalInScope`・
+ * `filteredArchived`/`filteredStatus`/`filteredPeriod`/`notIndexed` の各件数を、
+ * 別々のクエリではなく同一の集約クエリから得ることで、書き込みが並行して起きていても
+ * 「群カウントと totalInScope の総和が一致する」という被覆不変条件が構造的に崩れない。
+ */
+export interface ScopeAggregate {
+  /** 群カウント（第3階、axis は Phase 1 では常に 'subject'）。totalInScope に一致するよう合算できる。 */
+  groups: GroupCount[];
+  /** スコープ内（tenant + subject? + period? + status ゲート）の総数。 */
+  totalInScope: number;
+  /** groups の総和が totalInScope と一致することの信頼度。Phase 1 は常に 'exact'。 */
+  countKind: CountKind;
+  /**
+   * スコープ内だが埋め込みがまだ無い（`embeddingStatus !== 'ready'`）件数。
+   * スコープには含まれる（groups/totalInScope に乗っている）ため、`filtered` ではなく
+   * `Omission.kind = 'not_indexed'` の材料になる。
+   */
+  notIndexed: { count: number; countKind: CountKind };
+  /** status = 'archived' で「スコープを定義するフィルタ」により落ちた件数。 */
+  filteredArchived: { count: number; countKind: CountKind };
+  /** status IN ('superseded','forgotten') で落ちた件数（本 PR の裁量による束ね方。PR 本文参照）。 */
+  filteredStatus: { count: number; countKind: CountKind };
+  /** 時間窓（period）の外にあるため落ちた件数。period 未指定なら常に0。 */
+  filteredPeriod: { count: number; countKind: CountKind };
+}
+
+// ---------------------------------------------------------------------------
 // 量の計測と予算（docs/recall.md §6）
 // ---------------------------------------------------------------------------
 
@@ -312,7 +362,27 @@ export interface RecallQuery {
    * （docs/recall.md §5「既定は近似許可」）。
    */
   exactCounts?: boolean;
+  /**
+   * 段2（再スコア）で候補を残すか捨てるかの閾値（docs/recall.md §2 段2）。
+   *
+   * docs/recall.md はこの閾値の具体的な値・単位を規定していない
+   * （`ScoreBreakdown.total` がどの範囲に収まるかはスコアリング戦略次第であり、
+   * 埋め込みモデルが返す類似度の分布にも依存する）。本 PR の裁量として、
+   * 既定値 `DEFAULT_SCORE_THRESHOLD`（0.1）を置く——強い根拠がある値ではなく、
+   * 「明らかに無関係な候補（類似度が低い、または大きく減衰した候補）を落とす」
+   * という最低限の閾値である。呼び出し側が上書きできる。
+   */
+  scoreThreshold?: number;
 }
+
+/** RecallQuery.scoreThreshold の既定値。強い根拠のない Phase 1 の裁量値（本ファイルの doc 参照）。 */
+export const DEFAULT_SCORE_THRESHOLD = 0.1;
+
+/** RecallQuery.limit の既定値。 */
+export const DEFAULT_RECALL_LIMIT = 10;
+
+/** RecallQuery.overFetchFactor の既定値（docs/recall.md §3: k' = k × 4）。 */
+export const DEFAULT_OVER_FETCH_FACTOR = 4;
 
 export const RecallQuerySchema = z.object({
   text: z.string().min(1).optional(),
@@ -327,12 +397,19 @@ export const RecallQuerySchema = z.object({
     .optional(),
   budget: RecallBudgetSchema.optional(),
   exactCounts: z.boolean().optional(),
+  scoreThreshold: z.number().optional(),
 }) satisfies z.ZodType<RecallQuery>;
 
 /**
- * `countByGroup` に渡すスコープ。docs/architecture.md §5.1 は型を明記していないため、
+ * `MemoryStore.aggregateScope` に渡すスコープ。docs/architecture.md §5.1 は型を明記していないため、
  * §2 の段0（スコープ確定）・段5（目次帯は段0のスコープ全体を使う）の記述から
  * 素直に導いた最小限の型を置く。
+ *
+ * `subjectId` を省略すると「テナント全体」を意味する（`ctx.subjectId` が無い呼び出し）。
+ * `taxonomy` フィールドが無いのは意図的——Phase 1 に taxonomy の実体（labels テーブル）が
+ * 無い（docs/memory-model.md §8、labels/memory_labels は Phase 2）ため、スコープの
+ * taxonomy 次元は Phase 1 では常に無条件（フィルタが存在しない）である
+ * （PR 本文の「決めたこと」参照）。
  */
 export interface RecallScope {
   subjectId?: string;
@@ -364,3 +441,25 @@ export const RecallResultSchema = z.object({
   usage: RecallUsageSchema,
   explain: z.object({ stages: z.array(StageTraceSchema) }),
 }) satisfies z.ZodType<RecallResult>;
+
+// ---------------------------------------------------------------------------
+// 段6（記録）の書き込み口（docs/recall.md §2 段6、ADR 0008）
+// ---------------------------------------------------------------------------
+
+/**
+ * `MemoryStore.createRecall` への入力。`recalls` テーブル1行分のスナップショット
+ * （docs/memory-model.md §10）。段6が必須である理由（`recallId` が無いと
+ * `observe({kind:'memory_usage'})` が紐付け先を持たない）は docs/recall.md §2・§4 を参照。
+ */
+export interface NewRecallRecord {
+  tenantId: string;
+  subjectId?: string | null;
+  /** 発行された recall クエリ/オプションのスナップショット（JSON にシリアライズ可能な形）。 */
+  query: unknown;
+  budget?: RecallBudget | null;
+  omitted: Omission[];
+  usage: RecallUsage;
+  indexBand: IndexBand;
+  explain: { stages: StageTrace[] };
+  returnedMemoryIds: MemoryId[];
+}
