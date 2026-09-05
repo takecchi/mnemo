@@ -697,6 +697,7 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
           estimatedTokens: 0,
           counter: "heuristic",
           byTier: { full: 0, digest: 0, index: 0 },
+          indexChars: 0,
         },
         indexBand: { groups: [], totalInScope: 0, countKind: "exact" },
         explain: { stages: [] },

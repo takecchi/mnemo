@@ -282,10 +282,10 @@ describe("recall() — 段3: 矛盾の解決と必須の同伴取得（docs/reca
   it("予算に両方載らない場合、ペアごと落とす（片方だけを残さない）", async () => {
     const { runtime, stores } = buildRuntime();
     const { a, b } = await setupContestedPair(stores);
-    // maxChars は a.digest（5文字）だけなら収まるが、a+b（5+20=25文字）は収まらない大きさにする。
+    // maxMemoryChars は a.digest（5文字）だけなら収まるが、a+b（5+20=25文字）は収まらない大きさにする。
     const result = await runtime.recall(ctx, {
       vector: [1, 0],
-      budget: { maxChars: 10 },
+      budget: { maxMemoryChars: 10 },
     });
 
     const ids = result.memories.map((m) => m.memoryId);
@@ -299,7 +299,7 @@ describe("recall() — 段3: 矛盾の解決と必須の同伴取得（docs/reca
     const { a, b } = await setupContestedPair(stores);
     const result = await runtime.recall(ctx, {
       vector: [1, 0],
-      budget: { maxChars: 100 },
+      budget: { maxMemoryChars: 100 },
     });
     const ids = result.memories.map((m) => m.memoryId);
     expect(ids).toContain(a.id);
@@ -367,12 +367,42 @@ describe("recall() — usage（docs/recall.md §6: 計測と強制を混同し�
     expect(result.usage.counter).toBe("heuristic");
   });
 
-  it("budget を渡すと usage.share が budget に対する割合として得られる", async () => {
+  it("budget を渡すと usage.share が「予算の対象（memories tier）が予算のどれだけを使ったか」になる", async () => {
     const { runtime, stores } = buildRuntime();
     await createEmbeddedMemory(stores, [1, 0]);
-    const result = await runtime.recall(ctx, { vector: [1, 0], budget: { maxChars: 1000 } });
+    const result = await runtime.recall(ctx, { vector: [1, 0], budget: { maxMemoryChars: 1000 } });
     expect(result.usage.share).toBeDefined();
-    expect(result.usage.share).toBeCloseTo(result.usage.chars / 1000, 10);
+    // 分子は memories tier だけ = chars から目次帯を除いた分。
+    // （以前は chars 全体を分子にしていたため、目次帯のぶんだけ share が水増しされていた。）
+    expect(result.usage.share).toBeCloseTo(
+      (result.usage.chars - result.usage.indexChars) / 1000,
+      10,
+    );
+    expect(result.usage.indexChars).toBeGreaterThan(0);
+  });
+
+  /**
+   * ⭐ 目次帯が budget の対象外であることと、share が割合として成立することの歯。
+   *
+   * 目次帯を budget の対象にしない理由は ADR 0008 の芯にある——「0件でも何が在るかは言える」
+   * という目次帯の唯一の存在理由が、呼び出し側の渡した数字ひとつで消えてはならない。
+   * その帰結として、**目次帯より小さい budget を渡しても目次帯は削られない**。
+   *
+   * このとき share の分子に目次帯を含めていると 1 を超える（実際に 248% が観測されていた）。
+   * 「予算の何割を使ったか」と「全体でいくらかかったか」は別の問いであり、
+   * 1つの数で両方に答えようとするとどちらかが嘘になる。
+   */
+  it("目次帯より小さい budget でも、目次帯は削られず、share は 1 を超えない", async () => {
+    const { runtime, stores } = buildRuntime();
+    await createEmbeddedMemory(stores, [1, 0]);
+    const result = await runtime.recall(ctx, { vector: [1, 0], budget: { maxMemoryChars: 1 } });
+
+    // 目次帯は予算の外なので、予算が 1 文字でも残っている。
+    expect(result.usage.indexChars).toBeGreaterThan(1);
+    // 全量は予算を超える（目次帯のぶん）——これは仕様どおりであり、隠さない。
+    expect(result.usage.chars).toBeGreaterThan(1);
+    // だが share は「予算の対象がどれだけ使ったか」なので 1 を超えない。
+    expect(result.usage.share).toBeLessThanOrEqual(1);
   });
 });
 

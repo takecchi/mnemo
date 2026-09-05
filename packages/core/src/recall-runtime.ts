@@ -74,7 +74,7 @@ function unitTokens(unit: Unit, tokenCounter: TokenCounter): number {
 /** budget が指定されたトークン予算の中で最も厳しい(小さい)ものを1本にまとめる。 */
 function effectiveTokenBudget(budget: RecallBudget | undefined): number | undefined {
   if (!budget) return undefined;
-  const candidates = [budget.maxTokens, budget.promptBudgetTokens].filter(
+  const candidates = [budget.maxMemoryTokens, budget.promptBudgetTokens].filter(
     (v): v is number => v !== undefined,
   );
   if (candidates.length === 0) return undefined;
@@ -324,12 +324,12 @@ export async function runRecall(
   const budget = validatedQuery.budget;
   let keptUnits = units;
   if (budget) {
-    const maxChars = budget.maxChars;
+    const maxMemoryChars = budget.maxMemoryChars;
     const maxTokens = effectiveTokenBudget(budget);
     const fits = (candidateUnits: Unit[]): boolean => {
-      if (maxChars !== undefined) {
+      if (maxMemoryChars !== undefined) {
         const chars = candidateUnits.reduce((sum, u) => sum + unitChars(u), 0);
-        if (chars > maxChars) return false;
+        if (chars > maxMemoryChars) return false;
       }
       if (maxTokens !== undefined) {
         const tokens = candidateUnits.reduce((sum, u) => sum + unitTokens(u, deps.tokenCounter), 0);
@@ -433,21 +433,31 @@ export async function runRecall(
   const indexBandText = JSON.stringify(indexBand);
   const indexChars = indexBandText.length;
   const totalChars = digestChars + indexChars;
+  const memoryTokens = deps.tokenCounter.count(finalMemories.map((m) => m.digest).join("\n"));
   const tokenCount = deps.tokenCounter.count(
     finalMemories.map((m) => m.digest).join("\n") + indexBandText,
   );
-  const usageShareDenominator = effectiveTokenBudget(budget) ?? budget?.maxChars;
+
+  // share の分子は **memories tier だけ**である（目次帯を含めない）。
+  //
+  // 目次帯は budget の対象外なので（RecallBudget の doc 参照）、分子に含めると
+  // 「予算の何割を使ったか」という問いに対して、予算が縛っていない量まで数えることになり、
+  // 100% を超える——実際に 248% という「割合として成立しない値」が出ていた。
+  // 段4の切り詰めが memories tier を予算内に収めることを保証しているので、
+  // 分子を memories tier に限れば share は 1 を超えない。
+  //
+  // 「この応答は全体でいくらかかったか」は別の問いであり、`chars` と `indexChars` が答える。
+  const tokenBudget = effectiveTokenBudget(budget);
+  const usageShareDenominator = tokenBudget ?? budget?.maxMemoryChars;
+  const usageShareNumerator = tokenBudget !== undefined ? memoryTokens.tokens : digestChars;
   const usage = {
     chars: totalChars,
     estimatedTokens: tokenCount.tokens,
     counter: tokenCount.counter,
     byTier: { full: 0, digest: digestChars, index: indexChars },
+    indexChars,
     ...(usageShareDenominator !== undefined
-      ? {
-          share:
-            (effectiveTokenBudget(budget) !== undefined ? tokenCount.tokens : totalChars) /
-            usageShareDenominator,
-        }
+      ? { share: usageShareNumerator / usageShareDenominator }
       : {}),
   };
 

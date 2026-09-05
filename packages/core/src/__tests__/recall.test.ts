@@ -5,6 +5,7 @@ import {
   OmissionSchema,
   RecallQuerySchema,
   RecallResultSchema,
+  RecallUsageSchema,
 } from "../recall.js";
 
 describe("OmissionSchema — 7つの kind すべて", () => {
@@ -241,6 +242,7 @@ describe("RecallResultSchema", () => {
         estimatedTokens: 0,
         counter: "heuristic",
         byTier: { full: 0, digest: 0, index: 1 },
+        indexChars: 1,
       },
       explain: { stages: [{ stage: "scope", executed: true }] },
     });
@@ -261,5 +263,28 @@ describe("RecallResultSchema", () => {
       explain: { stages: [] },
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("RecallUsageSchema — share は割合として成立する値しか受け付けない", () => {
+  const base = {
+    chars: 100,
+    estimatedTokens: 25,
+    counter: "heuristic" as const,
+    byTier: { full: 0, digest: 60, index: 40 },
+    indexChars: 40,
+  };
+
+  it("share が 1 以下なら受け付ける", () => {
+    expect(RecallUsageSchema.safeParse({ ...base, share: 0.6 }).success).toBe(true);
+    expect(RecallUsageSchema.safeParse({ ...base, share: 1 }).success).toBe(true);
+  });
+
+  /**
+   * 以前は目次帯を分子に含めていたため 248% のような値が出ていた。
+   * 「割合として成立しない値」を型で弾く——推定値を実測値の顔で出さない、の数への適用。
+   */
+  it("share が 1 を超える形は弾く", () => {
+    expect(RecallUsageSchema.safeParse({ ...base, share: 2.483 }).success).toBe(false);
   });
 });

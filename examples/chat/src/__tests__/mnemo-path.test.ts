@@ -13,6 +13,7 @@ function recallWith(memories: RecallResult["memories"]): RecallResult {
       estimatedTokens: 0,
       counter: "heuristic",
       byTier: { full: 0, digest: 0, index: 0 },
+      indexChars: 0,
     },
     explain: { stages: [] },
   };
