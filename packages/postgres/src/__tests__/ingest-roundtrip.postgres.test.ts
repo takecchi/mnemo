@@ -58,7 +58,7 @@ describe("observe → recall 前段の往復（roadmap.md 段階3、本物の Po
       speaker: "tester",
     });
 
-    expect(result.extracted).toBe(true);
+    expect(result.extraction).toBe("ok");
     expect(result.memoryIds).toHaveLength(1);
 
     // 1. observations 行
@@ -124,7 +124,7 @@ describe("observe → recall 前段の往復（roadmap.md 段階3、本物の Po
       text: "冪等性チェック用の発話（無視されるべき）",
       externalId: "ext-roundtrip-1",
     });
-    expect(second.extracted).toBe(false);
+    expect(second.extraction).toBe("skipped");
 
     const memoryCount = await db.execute(sql`
       SELECT count(*)::int AS count FROM memories WHERE tenant_id = ${ctx.tenantId}

@@ -2,6 +2,7 @@ import { systemClock } from "./clock.js";
 import type { Clock } from "./interfaces/clock.js";
 import type { Ctx } from "./ctx.js";
 import { buildNewMemoryFromCandidate, extractCandidates } from "./extraction.js";
+import type { ExtractionOutcome } from "./extraction.js";
 import type { EmbeddingProvider } from "./interfaces/embedding-provider.js";
 import type { EventStore } from "./interfaces/event-store.js";
 import type { LLMProvider } from "./interfaces/llm-provider.js";
@@ -78,8 +79,17 @@ export interface ObserveResult {
    * PR 本文参照）。
    */
   memoryIds: MemoryId[];
-  /** この呼び出しの中で実際に抽出処理を実行したかどうか。 */
-  extracted: boolean;
+  /**
+   * この呼び出しの中で抽出がどうなったか。
+   *
+   * **`boolean` にしない。**「抽出した / していない」の2値に潰すと、
+   * **LLM 呼び出しが失敗して全文フォールバックへ倒れた**という第三の状態が
+   * 「抽出した」と同じ顔になる。ADR 0008 の判定基準——その区別があると
+   * 呼び出し側の次の一手が変わるか——に照らすと、これは潰してはいけない区別である
+   * （`llm_failed_whole_observation` なら、provider の復旧後に抽出をやり直す、
+   * という一手がある。`ok` にはその一手が無い）。
+   */
+  extraction: ExtractionOutcome;
 }
 
 export interface TickOptions {
@@ -130,10 +140,20 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
   const defaultClaimedBy = deps.config?.defaultClaimedBy ?? DEFAULT_CLAIMED_BY;
 
   /** 1件の Observation に対して抽出を実行し、作られた（または冪等に既存の）Memory の id を返す。 */
-  async function runExtraction(ctx: Ctx, observation: Observation): Promise<MemoryId[]> {
-    const { candidates } = await extractCandidates(deps.llmProvider, ctx, observation);
+  async function runExtraction(
+    ctx: Ctx,
+    observation: Observation,
+  ): Promise<{ memoryIds: MemoryId[]; outcome: ExtractionOutcome }> {
+    const { candidates, usedWholeObservationFallback } = await extractCandidates(
+      deps.llmProvider,
+      ctx,
+      observation,
+    );
+    const outcome: ExtractionOutcome = usedWholeObservationFallback
+      ? "llm_failed_whole_observation"
+      : "ok";
     if (candidates.length === 0) {
-      return [];
+      return { memoryIds: [], outcome };
     }
     const halfLifeHours = await deps.tenantSettingsStore.getDefaultHalfLifeHours(ctx);
     const now = clock.now();
@@ -164,7 +184,10 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
           digestSnapshot: memory.digest,
           sizeBeforeBytes: null,
           meta: {
-            reason: "extracted",
+            reason:
+              outcome === "llm_failed_whole_observation"
+                ? "extraction_failed_whole_observation_fallback"
+                : "extracted",
             sourceObservationId: observation.id,
             extractorVersion,
           },
@@ -173,7 +196,7 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       // embed ジョブは常に outbox 経由（非同期、docs/memory-model.md §11 行3）。
       // ここでは何もしない — tick() の processEmbedJob が処理する。
     }
-    return memoryIds;
+    return { memoryIds, outcome };
   }
 
   async function handleMemoryUsage(
@@ -201,7 +224,7 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       await deps.memoryStore.reinforce(ctx, memoryId, reinforcedAt);
     }
 
-    return { observationId: observation.id, memoryIds: insertedMemoryIds, extracted: false };
+    return { observationId: observation.id, memoryIds: insertedMemoryIds, extraction: "skipped" };
   }
 
   async function handleExtractableObservation(
@@ -232,20 +255,20 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
       // 冪等な再送（docs/architecture.md §3.5）。extract ジョブは積まれておらず、
       // sync/deferred のどちらであっても、ここで新たに抽出をやり直す必要はない
       // （最初の呼び出しで既に処理済みのはず）。
-      return { observationId: observation.id, memoryIds: [], extracted: false };
+      return { observationId: observation.id, memoryIds: [], extraction: "skipped" };
     }
 
     if (extractMode === "deferred") {
-      return { observationId: observation.id, memoryIds: [], extracted: false };
+      return { observationId: observation.id, memoryIds: [], extraction: "skipped" };
     }
 
     // extract: 'sync' — その場で抽出する（docs/architecture.md §3.2）。
-    const memoryIds = await runExtraction(ctx, observation);
+    const { memoryIds, outcome } = await runExtraction(ctx, observation);
     const extractJob = jobs.find((job) => job.kind === "extract");
     if (extractJob) {
       await deps.outboxStore.complete(ctx, extractJob.id);
     }
-    return { observationId: observation.id, memoryIds, extracted: true };
+    return { observationId: observation.id, memoryIds, extraction: outcome };
   }
 
   async function observe(ctx: Ctx, input: ObserveInput): Promise<ObserveResult> {

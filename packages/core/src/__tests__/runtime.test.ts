@@ -60,7 +60,7 @@ describe("runtime.observe — extract: 'sync'（既定, D2）", () => {
     );
     const result = await runtime.observe(ctx, { kind: "utterance", text: "明日東京に出張します" });
 
-    expect(result.extracted).toBe(true);
+    expect(result.extraction).toBe("ok");
     expect(result.memoryIds).toHaveLength(1);
     const memory = await stores.memoryStore.get(ctx, result.memoryIds[0]!);
     expect(memory?.digest).toBe("東京出張");
@@ -84,11 +84,44 @@ describe("runtime.observe — extract: 'sync'（既定, D2）", () => {
       kind: "utterance",
       text: "障害時でも残したい発話",
     });
-    expect(result.extracted).toBe(true);
+    expect(result.extraction).toBe("llm_failed_whole_observation");
     expect(result.memoryIds).toHaveLength(1);
     const memory = await stores.memoryStore.get(ctx, result.memoryIds[0]!);
     expect(memory?.content).toBe("障害時でも残したい発話");
     expect(memory?.provenance.kind).toBe("stated");
+  });
+
+  /**
+   * ADR 0008 の判定基準を取り込み側に当てる。
+   *
+   * LLM 呼び出しが失敗して全文フォールバックへ倒れた Memory は、**抽出されたものではない**
+   * ——未処理の生テキストである。監査ログがこれを `reason: 'extracted'` として記録すると、
+   * 監査ログ自体が事実でないことを主張することになる（「消えたことが見える」ための仕組みが、
+   * 「起きなかったことが起きた」と言う）。
+   *
+   * この歯は、`meta.reason` が抽出の成否を区別し続けることを守る。
+   */
+  it("LLM が失敗して全文フォールバックへ倒れたことが、監査ログの meta.reason に残る", async () => {
+    const { runtime, stores } = buildRuntime(throwingLlm());
+    const result = await runtime.observe(ctx, { kind: "utterance", text: "障害時の発話" });
+
+    const events = await stores.eventStore.list(ctx, { memoryId: result.memoryIds[0]! });
+    const created = events.find((event) => event.kind === "created");
+    expect(created).toBeDefined();
+    expect((created!.meta as { reason?: string }).reason).toBe(
+      "extraction_failed_whole_observation_fallback",
+    );
+  });
+
+  it("正常に抽出できたときの監査ログは reason: 'extracted' のままである（上の歯と対になる）", async () => {
+    const { runtime, stores } = buildRuntime(
+      llmReturning([{ content: "本文Y", digest: "要旨Y", provenanceKind: "stated" }]),
+    );
+    const result = await runtime.observe(ctx, { kind: "utterance", text: "本文Y" });
+
+    const events = await stores.eventStore.list(ctx, { memoryId: result.memoryIds[0]! });
+    const created = events.find((event) => event.kind === "created");
+    expect((created!.meta as { reason?: string }).reason).toBe("extracted");
   });
 
   it("createMemory の contentHash は注入された hashContent で計算される（core は計算しない, D16）", async () => {
@@ -115,7 +148,7 @@ describe("runtime.observe — extract: 'sync'（既定, D2）", () => {
       kind: "utterance",
       text: "特に記憶するまでもない雑談",
     });
-    expect(result.extracted).toBe(true);
+    expect(result.extraction).toBe("ok");
     expect(result.memoryIds).toEqual([]);
   });
 
@@ -158,7 +191,7 @@ describe("runtime.observe — extract: 'deferred'", () => {
       text: "本文",
       extract: "deferred",
     });
-    expect(result.extracted).toBe(false);
+    expect(result.extraction).toBe("skipped");
     expect(result.memoryIds).toEqual([]);
 
     const pending = await stores.outboxStore.claimBatch(ctx, {
@@ -208,7 +241,7 @@ describe("runtime.observe — 冪等性（roadmap.md 段階3の完了条件）",
     });
 
     expect(second.observationId).toBe(first.observationId);
-    expect(second.extracted).toBe(false);
+    expect(second.extraction).toBe("skipped");
     expect(second.memoryIds).toEqual([]);
 
     const groups = await stores.memoryStore.countByGroup(ctx, {});
@@ -263,7 +296,7 @@ describe("runtime.observe — memory_usage（ADR 0009）", () => {
       usedMemoryIds: [memory.id],
     });
 
-    expect(result.extracted).toBe(false);
+    expect(result.extraction).toBe("skipped");
     expect(result.memoryIds).toEqual([memory.id]);
     const reinforced = await stores.memoryStore.get(ctx, memory.id);
     expect(reinforced?.lastReinforcedAt).not.toBeNull();

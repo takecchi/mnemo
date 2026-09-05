@@ -128,6 +128,18 @@ function fallbackWholeObservationCandidate(observation: Observation): ExtractedM
   };
 }
 
+/**
+ * 抽出がどう終わったか（ADR 0008 の「無い」の分類を、recall だけでなく取り込み側にも適用する）。
+ *
+ * - `ok` — LLM が正常に応答した。**0件を返した場合も `ok`** である
+ *   （何も記憶に値しないという判断は正常な抽出結果であり、失敗ではない）。
+ * - `llm_failed_whole_observation` — LLM 呼び出し自体が失敗し、Observation の全文を
+ *   1件の Memory として残す安全弁へ倒れた（docs/memory-model.md §4「曖昧なら厚い側に倒す」）。
+ *   **この Memory は「抽出された」ものではない。** 未処理の生テキストである。
+ * - `skipped` — この呼び出しでは抽出を実行していない（`deferred`、`memory_usage`、冪等な再送）。
+ */
+export type ExtractionOutcome = "ok" | "llm_failed_whole_observation" | "skipped";
+
 export interface ExtractCandidatesResult {
   candidates: ExtractedMemoryCandidate[];
   /** LLM 呼び出し自体が失敗し、全文フォールバックへ倒れたかどうか。 */

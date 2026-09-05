@@ -132,6 +132,32 @@ LLM による digest 生成が失敗した場合、パイプラインは機械�
 関係なく常に書き込まれる。** 「薄い側にしか情報が無い」状態を作らないのが安全弁の核心であり、
 digest の生成方式がどちらであったかを隠さないのは同じ原則の適用でもある。
 
+### ⚠ 安全弁は、作動したことが見えなければならない（2026-09 追記）
+
+上の安全弁には**二段**ある。両者を混ぜないこと。
+
+1. **LLM は候補を返したが digest が空・欠落だった** → 機械的な先頭切り出しへ倒し、
+   `digest_source = 'fallback'` を記録する（上記）。
+2. **LLM 呼び出し自体が失敗した** → Observation の全文を1件の `stated` Memory として残す。
+
+**2 で残る Memory は「抽出されたもの」ではない。未処理の生テキストである。**
+当初の実装はこれを 1 と同じ顔で記録していた——`ObserveResult` は `extracted: true` を返し、
+`memory_events` の `created` イベントは `meta.reason = 'extracted'` を記録していた。
+⟹ **監査ログが、起きなかったこと（抽出）を起きたと主張していた。**
+
+安全弁そのものは正しい（記憶を失うくらいなら受け取る）。**間違っていたのは、
+安全弁が作動したことを記録しなかった点である。** 一過性の LLM 障害が、
+気づかれないまま生テキストを「抽出済みの記憶」として残す。
+
+⟹ [ADR 0013](./decisions/0013-extraction-outcome-taxonomy.md) で、
+`ObserveResult.extraction: ExtractionOutcome`（`ok` / `llm_failed_whole_observation` /
+`skipped`）と、`memory_events.meta.reason` の区別
+（`extracted` / `extraction_failed_whole_observation_fallback`）を決めた。
+
+**曖昧なら厚い側に倒す。ただし、倒したことを黙っていない。**
+これは [ADR 0008](./decisions/0008-absence-taxonomy.md) が `recall()` に対して定めた原則を、
+取り込み側にも一貫させたものである。
+
 ---
 
 ## 5. 矛盾の扱い
