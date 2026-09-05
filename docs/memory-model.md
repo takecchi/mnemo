@@ -407,10 +407,28 @@ CREATE TABLE memory_labels (
 );
 ```
 
-Phase 1 は `memories.tags`（`text[]`、常に open、フィルタ・加点に参加しない自由記述）のみを
-持つ。`labels` / `memory_labels` は Phase 2 で導入し、`tenant_settings.taxonomy_mode`
+Phase 1 は `memories.tags`（`text[]`、常に open な自由記述）のみを持つ。
+`labels` / `memory_labels` は Phase 2 で導入し、`tenant_settings.taxonomy_mode`
 （後述 §10）が `strict` のテナントでのみ `proposed` 状態が検索へ影響する。既存の `tags` は
 `labels` 導入時に `proposed` として移行できる形にしておく。
+
+**⚠ 2026-09 訂正（roadmap.md 段階4/5 の実装 PR）: 「フィルタ・加点に参加しない」という
+記述は誤りだった。** この文は「taxonomy の strict/open（`labels` の registered/proposed）
+という*ラベル語彙の登録制度*には `tags` はまだ参加しない」ことを言おうとしたものだが、
+文面が「`tags` はスコアリングにも一切参加しない」とまで読める形になっており、
+実装（`packages/core` の `defaultScoringStrategy`、[./recall.md](./recall.md) §7）および
+[./roadmap.md](./roadmap.md) 段階4の完了条件（「vector + tag + freshness のスコアリング」）と
+正面から食い違っていた。正しくは次の通りである。
+
+- **`tags` は段2の再スコア（[./recall.md](./recall.md) §2・§7）の加点要素として参加する。**
+  クエリタグとの一致数に応じて `ScoreBreakdown.tagMatch` を押し上げるが、
+  一致しないことで `total` を 0 に落とすことはない（加点であって除外条件ではない）。
+- **`tags` は段1のフィルタには参加しない。** `tags` が無い・一致しないことを理由に
+  Memory を候補集合から除外する経路は無い（recall.md §2 のスコープ確定・候補生成の
+  いずれにも `tags` によるゲートは無い）。
+- **taxonomy の strict/open（`labels` の registered/proposed）という語彙登録制度への参加は
+  引き続き Phase 2 である。** `tags` が Phase 1 のスコアリングに参加することと、
+  `labels` テーブルによる語彙管理が Phase 2 であることは別の軸であり、混同しない。
 
 ---
 
