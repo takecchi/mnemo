@@ -107,9 +107,19 @@ describe("OmissionSchema — 7つの kind すべて", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects 'not_indexed' without reason（理由を潰した形は受け付けない）", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "not_indexed",
+      count: 4,
+      countKind: "unknown",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("accepts 'not_indexed'", () => {
     const result = OmissionSchema.safeParse({
       kind: "not_indexed",
+      reason: "failed",
       count: 4,
       countKind: "unknown",
     });

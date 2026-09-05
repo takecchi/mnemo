@@ -218,9 +218,8 @@ describe("runtime.observe — extract: 'deferred'", () => {
     const tickResult = await runtime.tick(ctx, { kinds: ["extract"] });
     expect(tickResult).toEqual({ processed: 1, failed: 0 });
 
-    const memories = [...(await stores.memoryStore.countByGroup(ctx, {}))];
-    const total = memories.reduce((sum, g) => sum + g.count, 0);
-    expect(total).toBe(1);
+    const aggregate = await stores.memoryStore.aggregateScope(ctx, {});
+    expect(aggregate.totalInScope).toBe(1);
   });
 });
 
@@ -244,9 +243,8 @@ describe("runtime.observe — 冪等性（roadmap.md 段階3の完了条件）",
     expect(second.extraction).toBe("skipped");
     expect(second.memoryIds).toEqual([]);
 
-    const groups = await stores.memoryStore.countByGroup(ctx, {});
-    const total = groups.reduce((sum, g) => sum + g.count, 0);
-    expect(total).toBe(1);
+    const aggregate = await stores.memoryStore.aggregateScope(ctx, {});
+    expect(aggregate.totalInScope).toBe(1);
   });
 
   it("冪等な再送では新しい outbox ジョブを積まない", async () => {

@@ -3,7 +3,7 @@ import type { MemoryId, ObservationId, RecallId } from "../ids.js";
 import type { EmbeddingStatus, Memory, MemoryStatus, NewMemory } from "../memory.js";
 import type { NewObservation, Observation } from "../observation.js";
 import type { OutboxJobRecord } from "../outbox.js";
-import type { GroupCount, RecallScope } from "../recall.js";
+import type { NewRecallRecord, RecallScope, ScopeAggregate } from "../recall.js";
 import type { OutboxJobKind } from "./scheduler.js";
 
 /**
@@ -18,7 +18,8 @@ import type { OutboxJobKind } from "./scheduler.js";
  *   `decay_floor_at` を再計算する。
  * - `status = 'contested'` の Memory を単独で返してはならない。対向する Memory を
  *   スコアに関係なく必ず一緒に取得できなければならない（mandatory companion retrieval）。
- * - `countByGroup` の返り値は近似を許すが、`countKind` を必ず伴う。
+ * - `aggregateScope` の返り値は近似を許すが、`countKind` を必ず伴う（Phase 1 は常に厳密。
+ *   PR 本文の「設計上の疑義」参照）。`groups` の総和は必ず `totalInScope` と一致する。
  * - テナント分離: すべてのメソッドは `ctx.tenantId` に一致しない行を返してはならない。
  *   `testkit` は2テナントを同時に投入し、クロステナントの取得が0件になることを検査する。
  *
@@ -31,7 +32,7 @@ import type { OutboxJobKind } from "./scheduler.js";
  *   （`insertedMemoryIds`）を持つ。`reinforce` 単体では「実際に挿入されたか」を
  *   呼び出し側は知れない。
  *
- * roadmap.md 段階3（取り込み）で以下4メソッドを追加した（本 PR）:
+ * roadmap.md 段階3（取り込み）で以下4メソッドを追加した:
  * - `getObservation` — `runtime.tick`（`extract: 'deferred'` の消化・ADR 0005）が
  *   outbox ジョブの payload から `observationId` だけを受け取り、本文を取り直すために使う。
  * - `createObservationWithOutbox` / `createMemoryWithOutbox` — transactional outbox
@@ -42,6 +43,18 @@ import type { OutboxJobKind } from "./scheduler.js";
  *   ジョブを積む**——冪等な再送（`created: false`）でジョブを重複させない。
  * - `setEmbeddingStatus` — `embeddingStatus` の `pending → ready | failed` 遷移
  *   （roadmap.md 段階3の完了条件）を書き込む。
+ *
+ * roadmap.md 段階4/5（想起・説明）で以下2メソッドを追加した（本 PR）:
+ * - `aggregateScope` — `countByGroup` を置き換える。旧 `countByGroup` は群カウント
+ *   （`GroupCount[]`）しか返さず、`totalInScope`・`filtered` 系の件数を別のクエリで
+ *   取らざるを得なかった。マネージャー決定（docs/recall.md §5 の「スコープの外延」
+ *   補完）により、群カウント・スコープ内総数・スコープを定義するフィルタ（period/status）
+ *   で落ちた件数・`not_indexed` 件数を**単一の集約クエリ**から返す必要が生じたため、
+ *   戻り値を `ScopeAggregate` に拡張した契約として置き換えた。
+ * - `createRecall` — recall 段6（記録）の書き込み口。`recallId` を発行して `recalls`
+ *   テーブルへ1行残す（docs/recall.md §2 段6、ADR 0008）。この段は省略可能な段ではない
+ *   ——`recallId` が発行されないと `observe({kind:'memory_usage'})` が recall を
+ *   参照できなくなる。
  */
 export interface MemoryStore {
   createObservation(ctx: Ctx, input: NewObservation): Promise<Observation>;
@@ -94,5 +107,14 @@ export interface MemoryStore {
     recallId: RecallId,
     memoryIds: MemoryId[],
   ): Promise<{ insertedMemoryIds: MemoryId[] }>;
-  countByGroup(ctx: Ctx, scope: RecallScope): Promise<GroupCount[]>;
+  /**
+   * roadmap.md 段階4/5: 群カウント・スコープ内総数・スコープを定義するフィルタ
+   * （status/period）で落ちた件数・not_indexed 件数を単一の集約クエリから返す
+   * （`ScopeAggregate` の doc コメント、docs/recall.md §5 参照）。
+   * 契約: 返り値の `groups` の総和は必ず `totalInScope` と一致する
+   * （同一クエリから導出するため、並行する書き込みがあっても構造的に崩れない）。
+   */
+  aggregateScope(ctx: Ctx, scope: RecallScope): Promise<ScopeAggregate>;
+  /** roadmap.md 段階4/5: recall 段6（記録）。`recalls` へ1行書き込み、発行した recallId を返す。 */
+  createRecall(ctx: Ctx, record: NewRecallRecord): Promise<RecallId>;
 }

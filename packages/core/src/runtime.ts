@@ -3,6 +3,7 @@ import type { Clock } from "./interfaces/clock.js";
 import type { Ctx } from "./ctx.js";
 import { buildNewMemoryFromCandidate, extractCandidates } from "./extraction.js";
 import type { ExtractionOutcome } from "./extraction.js";
+import { heuristicTokenCounter } from "./heuristic-token-counter.js";
 import type { EmbeddingProvider } from "./interfaces/embedding-provider.js";
 import type { EventStore } from "./interfaces/event-store.js";
 import type { LLMProvider } from "./interfaces/llm-provider.js";
@@ -10,6 +11,7 @@ import type { MemoryStore } from "./interfaces/memory-store.js";
 import type { ClaimOutboxJobsOptions, OutboxStore } from "./interfaces/outbox-store.js";
 import type { OutboxJobKind } from "./interfaces/scheduler.js";
 import type { TenantSettingsStore } from "./interfaces/tenant-settings-store.js";
+import type { TokenCounter } from "./interfaces/token-counter.js";
 import type { VectorStore } from "./interfaces/vector-store.js";
 import type { MemoryId, ObservationId } from "./ids.js";
 import type {
@@ -22,6 +24,8 @@ import type {
 import { ObserveInputSchema, observeInputKindToObservationKind } from "./observation.js";
 import type { NewObservation, Observation } from "./observation.js";
 import type { OutboxJobRecord } from "./outbox.js";
+import { runRecall } from "./recall-runtime.js";
+import type { RecallQuery, RecallResult } from "./recall.js";
 
 /**
  * `runtime.observe` / `runtime.tick` の実装（roadmap.md 段階3、docs/architecture.md §3.2・§3.3）。
@@ -68,6 +72,11 @@ export interface RuntimeDeps {
   /** D16: SHA-256 hex 等、content からハッシュを計算する関数（core は計算しない）。 */
   hashContent: (content: string) => string;
   config?: RuntimeConfig;
+  /**
+   * roadmap.md 段階4: `usage`（docs/recall.md §6）の計測に使う。省略時は
+   * `heuristicTokenCounter`（文字数ベースの推定、`counter: 'heuristic'`）。
+   */
+  tokenCounter?: TokenCounter;
 }
 
 export interface ObserveResult {
@@ -112,6 +121,11 @@ export interface Runtime {
    * 何も起きない」を作らない、という設計方針をそのまま体現する。
    */
   tick(ctx: Ctx, opts?: TickOptions): Promise<TickResult>;
+  /**
+   * roadmap.md 段階4「想起」・段階5「説明」。docs/recall.md §2 の7段パイプライン
+   * （実装は `./recall-runtime.js` の `runRecall`）。
+   */
+  recall(ctx: Ctx, query: RecallQuery): Promise<RecallResult>;
 }
 
 function extractObservationPayload(
@@ -344,5 +358,17 @@ export function createRuntime(deps: RuntimeDeps): Runtime {
     return { processed, failed };
   }
 
-  return { observe, tick };
+  const tokenCounter = deps.tokenCounter ?? heuristicTokenCounter;
+
+  async function recall(ctx: Ctx, query: RecallQuery): Promise<RecallResult> {
+    return runRecall(ctx, query, {
+      memoryStore: deps.memoryStore,
+      vectorStore: deps.vectorStore,
+      embeddingProvider: deps.embeddingProvider,
+      clock,
+      tokenCounter,
+    });
+  }
+
+  return { observe, tick, recall };
 }

@@ -1,20 +1,22 @@
 import { defaultDecayStrategy } from "@mnemo/core";
+import type { NotIndexedReason } from "@mnemo/core";
 import type {
   Ctx,
   EmbeddingStatus,
-  GroupCount,
   Memory,
   MemoryId,
   MemoryStatus,
   MemoryStore,
   NewMemory,
   NewObservation,
+  NewRecallRecord,
   Observation,
   ObservationId,
   OutboxJobKind,
   OutboxJobRecord,
   RecallId,
   RecallScope,
+  ScopeAggregate,
 } from "@mnemo/core";
 import { nextId } from "./id.js";
 
@@ -38,6 +40,8 @@ export class InMemoryMemoryStore implements MemoryStore {
   private readonly extractionIndex = new Map<string, MemoryId>();
   /** `(tenant_id, recall_id, memory_id)` の使用報告の冪等キー。 */
   private readonly usages = new Set<string>();
+  /** roadmap.md 段階4/5: recall 段6（記録）が書き込む `recalls` 相当のインメモリ表。 */
+  readonly recalls = new Map<string, NewRecallRecord & { tenantId: string }>();
   /** `InMemoryOutboxStore` と共有する outbox ジョブの配列（同一プロセス内の参照共有）。 */
   readonly outboxJobs: OutboxJobRecord[] = [];
 
@@ -256,8 +260,22 @@ export class InMemoryMemoryStore implements MemoryStore {
     return { insertedMemoryIds };
   }
 
-  async countByGroup(ctx: Ctx, scope: RecallScope): Promise<GroupCount[]> {
-    const counts = new Map<string | null, number>();
+  /**
+   * roadmap.md 段階4/5: `countByGroup` を置き換える単一集約（`ScopeAggregate`、
+   * docs/recall.md §5・packages/core の recall.ts の doc コメント参照）。
+   *
+   * インメモリ実装なので「単一クエリ」という概念自体は無いが、契約として重要なのは
+   * 「groups の総和が totalInScope と一致すること」——ここでは同じ1回のループで
+   * 両方を積み上げることでそれを保証する（postgres 実装は単一 SQL 文でこれを保証する）。
+   */
+  async aggregateScope(ctx: Ctx, scope: RecallScope): Promise<ScopeAggregate> {
+    const inScopeBySubject = new Map<string | null, number>();
+    let totalInScope = 0;
+    const notIndexed: Record<NotIndexedReason, number> = { pending: 0, failed: 0, skipped: 0 };
+    let filteredArchived = 0;
+    let filteredStatus = 0;
+    let filteredPeriod = 0;
+
     for (const memory of this.memories.values()) {
       if (memory.tenantId !== ctx.tenantId) {
         continue;
@@ -265,21 +283,62 @@ export class InMemoryMemoryStore implements MemoryStore {
       if (scope.subjectId !== undefined && memory.subjectId !== scope.subjectId) {
         continue;
       }
-      if (scope.occurredAfter && memory.occurredAt && memory.occurredAt < scope.occurredAfter) {
+
+      if (memory.status === "archived") {
+        filteredArchived += 1;
         continue;
       }
-      if (scope.occurredBefore && memory.occurredAt && memory.occurredAt > scope.occurredBefore) {
+      if (memory.status === "superseded" || memory.status === "forgotten") {
+        filteredStatus += 1;
         continue;
       }
+      // ここに来るのは status IN ('active','contested') のみ。
+
+      const effectiveTime = memory.occurredAt ?? memory.recordedAt;
+      const inPeriod =
+        (scope.occurredAfter === undefined || effectiveTime >= scope.occurredAfter) &&
+        (scope.occurredBefore === undefined || effectiveTime <= scope.occurredBefore);
+      if (!inPeriod) {
+        filteredPeriod += 1;
+        continue;
+      }
+
+      totalInScope += 1;
       const key = memory.subjectId ?? null;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      inScopeBySubject.set(key, (inScopeBySubject.get(key) ?? 0) + 1);
+      if (memory.embeddingStatus !== "ready") {
+        notIndexed[memory.embeddingStatus] += 1;
+      }
     }
-    return [...counts.entries()].map(([key, count]) => ({
-      axis: "subject" as const,
-      key,
-      count,
-      countKind: "exact" as const,
-    }));
+
+    const groups: ScopeAggregate["groups"] = [...inScopeBySubject.entries()].map(
+      ([key, count]) => ({
+        axis: "subject" as const,
+        key,
+        count,
+        countKind: "exact" as const,
+      }),
+    );
+
+    return {
+      groups,
+      totalInScope,
+      countKind: "exact",
+      notIndexed: {
+        pending: { count: notIndexed.pending, countKind: "exact" },
+        failed: { count: notIndexed.failed, countKind: "exact" },
+        skipped: { count: notIndexed.skipped, countKind: "exact" },
+      },
+      filteredArchived: { count: filteredArchived, countKind: "exact" },
+      filteredStatus: { count: filteredStatus, countKind: "exact" },
+      filteredPeriod: { count: filteredPeriod, countKind: "exact" },
+    };
+  }
+
+  async createRecall(ctx: Ctx, record: NewRecallRecord): Promise<RecallId> {
+    const id = nextId("rcl");
+    this.recalls.set(id, { ...record, tenantId: ctx.tenantId });
+    return id;
   }
 
   private extractionKey(

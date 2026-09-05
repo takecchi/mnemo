@@ -3,19 +3,20 @@ import { defaultDecayStrategy } from "@mnemo/core";
 import type {
   Ctx,
   EmbeddingStatus,
-  GroupCount,
   Memory,
   MemoryId,
   MemoryStatus,
   MemoryStore,
   NewMemory,
   NewObservation,
+  NewRecallRecord,
   Observation,
   ObservationId,
   OutboxJobKind,
   OutboxJobRecord,
   RecallId,
   RecallScope,
+  ScopeAggregate,
 } from "@mnemo/core";
 import type { Db } from "./client.js";
 import {
@@ -381,28 +382,126 @@ export class PostgresMemoryStore implements MemoryStore {
     };
   }
 
-  async countByGroup(ctx: Ctx, scope: RecallScope): Promise<GroupCount[]> {
-    const conditions = [sql`tenant_id = ${ctx.tenantId}`];
-    if (scope.subjectId !== undefined) {
-      conditions.push(sql`subject_id = ${scope.subjectId}`);
-    }
-    if (scope.occurredAfter !== undefined) {
-      conditions.push(sql`occurred_at >= ${scope.occurredAfter}`);
-    }
-    if (scope.occurredBefore !== undefined) {
-      conditions.push(sql`occurred_at <= ${scope.occurredBefore}`);
-    }
-    const whereClause = sql.join(conditions, sql` AND `);
+  /**
+   * roadmap.md 段階4/5・docs/recall.md §5「スコープの外延」（マネージャー決定、
+   * packages/core の recall.ts の `ScopeAggregate` doc コメント参照）。
+   *
+   * **単一の集約クエリ**で、群カウント（第3階）・スコープ内総数・スコープを定義する
+   * フィルタ（status/period）で落ちた件数・not_indexed 件数のすべてを返す。
+   * ADR 0011 が段1から締め出した `count(*) OVER ()` と同じ理由——**別々のクエリから
+   * 出すと、その間の書き込みで総和が一致しなくなる**——を、段5でも同じ形で守る。
+   *
+   * `status` の3分岐（scope 内 / archived / それ以外）と period の内外は、
+   * すべて `FILTER (WHERE ...)` による条件付き集約として同じ `GROUP BY subject_id` の
+   * 1回のスキャンで計算する。
+   */
+  async aggregateScope(ctx: Ctx, scope: RecallScope): Promise<ScopeAggregate> {
+    const subjectFilter =
+      scope.subjectId !== undefined ? sql`AND subject_id = ${scope.subjectId}` : sql``;
+    const occurredAfter = scope.occurredAfter ?? null;
+    const occurredBefore = scope.occurredBefore ?? null;
+
+    // period 条件: 未指定側は常に真になる（フィルタなしを表す）。
+    // occurred_at が NULL の Memory は recorded_at を代替の実効時刻として扱う
+    // （docs/recall.md §7 の freshness 計算が occurred_at ?? recorded_at を使うのと同じ規約）。
+    const inPeriod = sql`(
+      ${occurredAfter}::timestamptz IS NULL OR COALESCE(occurred_at, recorded_at) >= ${occurredAfter}::timestamptz
+    ) AND (
+      ${occurredBefore}::timestamptz IS NULL OR COALESCE(occurred_at, recorded_at) <= ${occurredBefore}::timestamptz
+    )`;
 
     const result = await this.db.execute(sql`
-      SELECT subject_id AS key, count(*)::int AS count
+      SELECT
+        subject_id AS key,
+        count(*) FILTER (
+          WHERE status IN ('active', 'contested') AND ${inPeriod}
+        )::int AS in_scope,
+        count(*) FILTER (
+          WHERE status IN ('active', 'contested') AND ${inPeriod} AND embedding_status = 'pending'
+        )::int AS not_indexed_pending,
+        count(*) FILTER (
+          WHERE status IN ('active', 'contested') AND ${inPeriod} AND embedding_status = 'failed'
+        )::int AS not_indexed_failed,
+        count(*) FILTER (
+          WHERE status IN ('active', 'contested') AND ${inPeriod} AND embedding_status = 'skipped'
+        )::int AS not_indexed_skipped,
+        count(*) FILTER (WHERE status = 'archived')::int AS archived,
+        count(*) FILTER (WHERE status IN ('superseded', 'forgotten'))::int AS other_status,
+        count(*) FILTER (
+          WHERE status IN ('active', 'contested') AND NOT (${inPeriod})
+        )::int AS period_filtered
       FROM memories
-      WHERE ${whereClause}
+      WHERE tenant_id = ${ctx.tenantId} ${subjectFilter}
       GROUP BY subject_id
     `);
-    return result.rows.map((row) => {
-      const r = row as unknown as { key: string | null; count: number };
-      return { axis: "subject" as const, key: r.key, count: r.count, countKind: "exact" as const };
-    });
+
+    const rows = result.rows.map(
+      (row) =>
+        row as unknown as {
+          key: string | null;
+          in_scope: number;
+          not_indexed_pending: number;
+          not_indexed_failed: number;
+          not_indexed_skipped: number;
+          archived: number;
+          other_status: number;
+          period_filtered: number;
+        },
+    );
+
+    const groups = rows
+      .filter((row) => row.in_scope > 0)
+      .map((row) => ({
+        axis: "subject" as const,
+        key: row.key,
+        count: row.in_scope,
+        countKind: "exact" as const,
+      }));
+
+    const sum = (
+      field:
+        | "in_scope"
+        | "not_indexed_pending"
+        | "not_indexed_failed"
+        | "not_indexed_skipped"
+        | "archived"
+        | "other_status"
+        | "period_filtered",
+    ) => rows.reduce((total, row) => total + row[field], 0);
+
+    return {
+      groups,
+      totalInScope: sum("in_scope"),
+      countKind: "exact",
+      notIndexed: {
+        pending: { count: sum("not_indexed_pending"), countKind: "exact" },
+        failed: { count: sum("not_indexed_failed"), countKind: "exact" },
+        skipped: { count: sum("not_indexed_skipped"), countKind: "exact" },
+      },
+      filteredArchived: { count: sum("archived"), countKind: "exact" },
+      filteredStatus: { count: sum("other_status"), countKind: "exact" },
+      filteredPeriod: { count: sum("period_filtered"), countKind: "exact" },
+    };
+  }
+
+  async createRecall(ctx: Ctx, record: NewRecallRecord): Promise<RecallId> {
+    const result = await this.db.execute(sql`
+      INSERT INTO recalls (
+        id, tenant_id, subject_id, query, budget, omitted, usage, index_band, explain,
+        returned_memory_ids, created_at
+      ) VALUES (
+        gen_random_uuid(), ${ctx.tenantId}, ${record.subjectId ?? null},
+        ${JSON.stringify(record.query)}::jsonb,
+        ${record.budget !== undefined && record.budget !== null ? JSON.stringify(record.budget) : null}::jsonb,
+        ${JSON.stringify(record.omitted)}::jsonb,
+        ${JSON.stringify(record.usage)}::jsonb,
+        ${JSON.stringify(record.indexBand)}::jsonb,
+        ${JSON.stringify(record.explain)}::jsonb,
+        ${sql.param(record.returnedMemoryIds)}::uuid[],
+        now()
+      )
+      RETURNING id
+    `);
+    return (result.rows[0] as unknown as { id: string }).id;
   }
 }

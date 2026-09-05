@@ -316,7 +316,8 @@ interface MemoryStore {
     recallId: RecallId,
     memoryIds: MemoryId[]
   ): Promise<{ insertedMemoryIds: MemoryId[] }>;
-  countByGroup(ctx: Ctx, scope: RecallScope): Promise<GroupCount[]>;
+  aggregateScope(ctx: Ctx, scope: RecallScope): Promise<ScopeAggregate>;
+  createRecall(ctx: Ctx, record: NewRecallRecord): Promise<RecallId>;
 }
 
 type MemoryStatus = 'active' | 'superseded' | 'contested' | 'archived' | 'forgotten';
@@ -329,6 +330,22 @@ type MemoryStatus = 'active' | 'superseded' | 'contested' | 'archived' | 'forgot
 > 積む。`setEmbeddingStatus` は `embeddingStatus` の `pending → ready | failed` 遷移を書く。
 > なぜ独立した「トランザクションハンドル」の抽象にしなかったかは ADR 0012 D-ingest-1 を
 > 参照。
+
+> **roadmap.md 段階4/5（2026-09 追記、本 PR）**: `countByGroup` を `aggregateScope` に
+> 置き換え、`createRecall` を足した。
+>
+> - **`aggregateScope`**: 旧 `countByGroup` は群カウント（`GroupCount[]`）だけを返し、
+>   `totalInScope`・スコープを定義するフィルタ（status/period）で落ちた件数・
+>   `not_indexed` 件数は別のクエリで取らざるを得なかった。マネージャー決定
+>   （[docs/recall.md](./recall.md) §5「スコープの外延」の補完）により、これらすべてを
+>   **単一の集約クエリ**から返す契約に拡張した——ADR 0011 が段1の `count(*) OVER ()` を
+>   締め出したのと同じ理由（別々のクエリから出すと、その間の書き込みで総和が
+>   一致しなくなる）を、段5でも守るためである。契約: 返り値の `groups` の総和は
+>   必ず `totalInScope` と一致する。
+> - **`createRecall`**: recall 段6（記録、[docs/recall.md](./recall.md) §2）の書き込み口。
+>   `recalls` テーブルへ1行書き込み、発行した `recallId` を返す。この段は省略可能な段では
+>   ない——`recallId` が発行されないと `observe({kind:'memory_usage'})` が recall を
+>   参照できなくなる（ADR 0008）。
 
 > **D9（2026-09 追記）**: `getMany` と `recordUsage` を足した。
 >
@@ -360,8 +377,10 @@ type MemoryStatus = 'active' | 'superseded' | 'contested' | 'archived' | 'forgot
   Memory を**スコアに関係なく必ず一緒に**取得できなければならない（mandatory companion
   retrieval）。これは原則の姿1（争われている主張を、争われていない顔で出さない）の直接の実装であり、
   MemoryStore の契約としてここに明記する。詳細な判定条件は [docs/memory-model.md](./memory-model.md)。
-- `countByGroup` の返り値は近似を許すが、`countKind: 'exact' | 'lower_bound' | 'unknown'` を
-  必ず伴う（[docs/recall.md](./recall.md) の目次帯）。
+- `aggregateScope` の返り値は近似を許すが、`countKind: 'exact' | 'lower_bound' | 'unknown'` を
+  必ず伴う（[docs/recall.md](./recall.md) の目次帯）。Phase 1 の実装は常に厳密集計であり、
+  近似経路（例えば `pg_stats`/`reltuples` に基づく安価な推定）は実装していない
+  （PR 本文「設計上の疑義」参照）。
 - テナント分離: すべてのメソッドは `ctx.tenantId` に一致しない行を返してはならない。
   `testkit` は2テナントを同時に投入し、クロステナントの取得が0件になることを検査する。
 
