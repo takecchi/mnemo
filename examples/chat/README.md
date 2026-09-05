@@ -199,6 +199,68 @@ pnpm --filter @mnemora/example-chat run test:db
 
 ---
 
+## `retrieval`: 意味的関連性の測定（本 PR で追加）
+
+`compare` の限界として上に明記した通り、擬似 embedding は意味的な類似度を表現しないため、
+「recall がどれだけの量を返すか」は測れても「正しいものを返すか」は測れない。`retrieval`
+サブコマンドはこの後者——**意味的に関連する記憶が正しく上位に来るか**——を、本物の
+OpenAI（LLM・embedding）を使って測るためのものである。
+
+```bash
+DATABASE_URL=... OPENAI_API_KEY=... pnpm --filter @mnemora/example-chat run retrieval
+```
+
+**本物の API を叩く。CI には載せていない**（`.github/**` は変更していない）。手動で
+`OPENAI_API_KEY` を指定して実行したときだけ動く。
+
+### 何を測るか(`src/probe-set.ts`・`src/retrieval-quality.ts`)
+
+- `src/probe-set.ts` に、色・ペット・運動・食べ物/アレルギー・家族の居住地・
+  プログラミング言語・出張の7領域の probe を置く。probe ごとに gold(冒頭で1度だけ
+  表明される事実)・distractor(同じ話題・違う主語や値)・質問(gold と内容語を
+  共有しない——`lexicalControl: true` の1件だけ例外)を持つ。
+- gold・distractor(計14件)の後ろに、probe の話題と重ならない領域(事務手続き・
+  家電の修理・書籍や文房具の購入・部屋の片付け・郵便物・季節の行事の準備)の
+  「haystack」を敷き詰める。haystack は決定的に生成され(乱数を使わない)、
+  probe の話題語を含まないことを機械的に検査してある(`findTopicKeywordViolations`)。
+  ⚠ `scenario.ts` の filler(「今日はいい天気ですね。」等)は使っていない——本物の
+  gpt-4o-mini で実際に確認したところ、この種の世間話には `{"memories":[]}` が返り、
+  記憶として残らないため(干し草が消えてしまう)。
+- `recall().memories` に返ってきた `memoryId` から、`memoryStore.get`/`getObservation`
+  (`packages/core`/`packages/postgres` 既存の公開 interface。変更していない)を辿って
+  元の `externalId`(`gold-<id>`/`distractor-<id>`/`filler-NNNN`)へ戻し、gold/distractor
+  の順位(`goldRank`/`distractorRank`)・`hit@1`/`hit@10`・`distractorBeatsGold`・MRR
+  (全体・`lexicalControl`・非語彙で分けて集計)を probe ごとに計算する。
+
+### 3つの arm
+
+LLM と embedding を別々に選べる(`MNEMORA_LLM`/`MNEMORA_EMBEDDING`、`src/providers.ts`)
+ようにしたのはこのため——「順位が変わったのは embedding のせいか抽出のせいか」を
+切り分けられないと、どちらが効いたか言えない。
+
+| arm | LLM | Embedding |
+|---|---|---|
+| A | 擬似(`DeterministicLLMProvider`) | 擬似(`DeterministicEmbeddingProvider`) |
+| B | 擬似 | 本物(`text-embedding-3-small`) |
+| C | 本物(`gpt-4o-mini`) | 本物(`text-embedding-3-small`) |
+
+arm ごとに別テナントを使う。outbox は `tick()` の `processed === 0` まで繰り返して
+干上がらせる——haystack の既定件数(`DEFAULT_HAYSTACK_SIZE`)は `tick()` の既定 `limit`
+(50、`packages/core/src/runtime.ts` の `DEFAULT_TICK_LIMIT`)を超えており、
+`ingestConversation`(`chat`/`compare` が使う、`tick()` を1回しか呼ばない実装)のままでは
+51件目以降が埋め込まれずに残ることを、`retrieval` 自身が実行結果として示す。
+
+呼び出し回数・トークン・USD の実測(`src/usage-meter.ts`。費用は2026-09時点の公開価格を
+コードに書いた定数表による概算であり、OpenAI の請求 API から取得した実額ではない)を
+arm ごとに画面へ出す。擬似 provider だけの arm(A)ではその旨を明示する
+(「OpenAI の API は一切叩いていない」)。
+
+**⚠ 実測結果はまだこの README に載せていない。** 本物の API キーでの実行はまだ
+行っていない——`retrieval` は書いた時点では「どう測るか」の実装であり、
+「実際にどうだったか」はまだ確かめていない。
+
+---
+
 ## この会話生成（`src/scenario.ts`）について
 
 `buildConversation(fillerPairs)` は乱数を使わない決定的な関数——同じ `fillerPairs` を

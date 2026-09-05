@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { OpenAIEmbeddingProvider, OpenAILLMProvider } from "@mnemora/openai";
 import { DeterministicEmbeddingProvider, DeterministicLLMProvider } from "@mnemora/testkit";
-import { createProviders, selectProviderMode } from "../providers.js";
+import {
+  createProviders,
+  selectEmbeddingMode,
+  selectLLMMode,
+  selectProviderMode,
+} from "../providers.js";
 
 /**
  * `selectProviderMode`/`createProviders` の唯一の分岐（`OPENAI_API_KEY` の有無）に、
@@ -36,5 +41,61 @@ describe("createProviders", () => {
     expect(providers.mode).toBe("openai");
     expect(providers.llmProvider).toBeInstanceOf(OpenAILLMProvider);
     expect(providers.embeddingProvider).toBeInstanceOf(OpenAIEmbeddingProvider);
+  });
+});
+
+/**
+ * `MNEMORA_LLM`/`MNEMORA_EMBEDDING` による個別上書き（本 PR (B)）。
+ * **未指定なら `selectProviderMode` と一致する**——上の `describe("selectProviderMode")`
+ * のテストが変わらず通ることが、この契約が壊れていないことの一次的な証拠でもある。
+ */
+describe("selectLLMMode / selectEmbeddingMode", () => {
+  it("未指定なら selectProviderMode と同じ結果になる（鍵無し）", () => {
+    expect(selectLLMMode({})).toBe("deterministic");
+    expect(selectEmbeddingMode({})).toBe("deterministic");
+  });
+
+  it("未指定なら selectProviderMode と同じ結果になる（鍵あり）", () => {
+    const env = { OPENAI_API_KEY: "sk-fake-for-test" };
+    expect(selectLLMMode(env)).toBe("openai");
+    expect(selectEmbeddingMode(env)).toBe("openai");
+  });
+
+  it("MNEMORA_LLM/MNEMORA_EMBEDDING を個別に上書きできる", () => {
+    const env = {
+      OPENAI_API_KEY: "sk-fake-for-test",
+      MNEMORA_LLM: "deterministic",
+      MNEMORA_EMBEDDING: "openai",
+    };
+    expect(selectLLMMode(env)).toBe("deterministic");
+    expect(selectEmbeddingMode(env)).toBe("openai");
+  });
+
+  it("不明な値を渡すと例外を投げる（黙って無視しない）", () => {
+    expect(() => selectLLMMode({ MNEMORA_LLM: "not-a-mode" })).toThrow(/MNEMORA_LLM/);
+    expect(() => selectEmbeddingMode({ MNEMORA_EMBEDDING: "not-a-mode" })).toThrow(
+      /MNEMORA_EMBEDDING/,
+    );
+  });
+});
+
+describe("createProviders: LLM/Embedding の個別上書き", () => {
+  it("MNEMORA_LLM=deterministic + MNEMORA_EMBEDDING=openai で LLM だけ擬似物のままにできる", () => {
+    const providers = createProviders({
+      OPENAI_API_KEY: "sk-fake-for-test",
+      MNEMORA_LLM: "deterministic",
+      MNEMORA_EMBEDDING: "openai",
+    });
+    expect(providers.llmMode).toBe("deterministic");
+    expect(providers.embeddingMode).toBe("openai");
+    expect(providers.llmProvider).toBeInstanceOf(DeterministicLLMProvider);
+    expect(providers.embeddingProvider).toBeInstanceOf(OpenAIEmbeddingProvider);
+    // どちらか一方でも本物を使うので usage-meter が存在する。
+    expect(providers.usageMeter).toBeDefined();
+  });
+
+  it("両方擬似物のときは usageMeter を持たない（API を叩く経路が無いため）", () => {
+    const providers = createProviders({});
+    expect(providers.usageMeter).toBeUndefined();
   });
 });

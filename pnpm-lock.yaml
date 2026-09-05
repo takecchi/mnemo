@@ -50,6 +50,9 @@ importers:
       '@mnemora/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit
+      openai:
+        specifier: 7.10.0
+        version: 7.10.0(zod@4.5.4)
     devDependencies:
       tsx:
         specifier: 4.23.13
