@@ -268,7 +268,8 @@ type IndexBand = {
 
 type GroupCount = {
   axis: 'subject' | 'taxonomy' | 'time_window'
-  key: string
+  key: string | null   // D12（2026-09 追記）: subject_id IS NULL の群は null で表す。
+                        // '(none)' のような番兵文字列は実在する subject 名と衝突しうるため採らない。
   count: number
   countKind: CountKind
 }

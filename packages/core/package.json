@@ -1,0 +1,24 @@
+{
+  "name": "@mnemo/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "mnemo の core パッケージ。zod 以外の実行時依存を持たない。interface / 型 / 純関数の既定戦略。",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

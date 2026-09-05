@@ -1,0 +1,255 @@
+import { describe, expect, it } from "vitest";
+import {
+  GroupCountSchema,
+  IndexBandSchema,
+  OmissionSchema,
+  RecallQuerySchema,
+  RecallResultSchema,
+} from "../recall.js";
+
+describe("OmissionSchema — 7つの kind すべて", () => {
+  it("accepts 'stage_skipped'", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "stage_skipped",
+      stage: "candidate_generation",
+      reason: "embedding_provider_unavailable",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'stage_skipped' の reason が未知の値", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "stage_skipped",
+      stage: "candidate_generation",
+      reason: "something_else",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 'filtered'", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "filtered",
+      condition: "period",
+      count: 3,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'filtered' の count が負数", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "filtered",
+      condition: "period",
+      count: -1,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 'below_threshold'（nearMisses 省略可）", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "below_threshold",
+      count: 2,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts 'below_threshold'（nearMisses あり）", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "below_threshold",
+      count: 2,
+      countKind: "exact",
+      nearMisses: [{ memoryId: "m1", score: 0.4 }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'below_threshold' の nearMisses の要素が不正", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "below_threshold",
+      count: 2,
+      countKind: "exact",
+      nearMisses: [{ memoryId: "m1" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 'over_limit'", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "over_limit",
+      count: 5,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'over_limit' が countKind を欠く", () => {
+    const result = OmissionSchema.safeParse({ kind: "over_limit", count: 5 });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 'budget_dropped'", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "budget_dropped",
+      count: 1,
+      countKind: "lower_bound",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'budget_dropped' の countKind が未知の値", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "budget_dropped",
+      count: 1,
+      countKind: "approximate",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 'not_indexed'", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "not_indexed",
+      count: 4,
+      countKind: "unknown",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'not_indexed' の count が非整数", () => {
+    const result = OmissionSchema.safeParse({
+      kind: "not_indexed",
+      count: 1.5,
+      countKind: "unknown",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 'ann_truncated'（countKind は必ず 'unknown'）", () => {
+    const result = OmissionSchema.safeParse({ kind: "ann_truncated", countKind: "unknown" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 'ann_truncated' の countKind が 'exact'（型で 'unknown' 固定のため）", () => {
+    const result = OmissionSchema.safeParse({ kind: "ann_truncated", countKind: "exact" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects 未知の kind", () => {
+    const result = OmissionSchema.safeParse({ kind: "vanished" });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("GroupCountSchema — D12: key は string | null", () => {
+  it("accepts key が文字列", () => {
+    const result = GroupCountSchema.safeParse({
+      axis: "subject",
+      key: "project/mnemo",
+      count: 10,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts key が null（subject_id IS NULL の群）", () => {
+    const result = GroupCountSchema.safeParse({
+      axis: "subject",
+      key: null,
+      count: 3,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects key が undefined（省略不可。null を明示する必要がある）", () => {
+    const result = GroupCountSchema.safeParse({
+      axis: "subject",
+      count: 3,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("IndexBandSchema", () => {
+  it("accepts digestBand 省略（Phase 1 は常に undefined）", () => {
+    const result = IndexBandSchema.safeParse({
+      groups: [],
+      totalInScope: 0,
+      countKind: "exact",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts digestBand が指定された場合（Phase 2 向けの型だが受理はできる）", () => {
+    const result = IndexBandSchema.safeParse({
+      groups: [],
+      totalInScope: 1,
+      countKind: "exact",
+      digestBand: [{ memoryId: "m1", digest: "d" }],
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("RecallQuerySchema — D5: excludeProvenanceKinds", () => {
+  it("accepts excludeProvenanceKinds を指定しない（既定で inferred を含める）", () => {
+    const result = RecallQuerySchema.safeParse({ text: "hello" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts excludeProvenanceKinds: ['inferred']（推論を除外するオプション）", () => {
+    const result = RecallQuerySchema.safeParse({
+      text: "hello",
+      excludeProvenanceKinds: ["inferred"],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects excludeProvenanceKinds に未知の provenance kind", () => {
+    const result = RecallQuerySchema.safeParse({
+      excludeProvenanceKinds: ["fabricated"],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("RecallResultSchema", () => {
+  it("accepts 0件の recall（index だけが在る、という形）", () => {
+    const result = RecallResultSchema.safeParse({
+      recallId: "rcl-1",
+      memories: [],
+      omitted: [{ kind: "filtered", condition: "period", count: 3, countKind: "exact" }],
+      index: {
+        groups: [{ axis: "subject", key: "project/mnemo", count: 412, countKind: "exact" }],
+        totalInScope: 412,
+        countKind: "exact",
+      },
+      usage: {
+        chars: 0,
+        estimatedTokens: 0,
+        counter: "heuristic",
+        byTier: { full: 0, digest: 0, index: 1 },
+      },
+      explain: { stages: [{ stage: "scope", executed: true }] },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects recallId を欠く RecallResult", () => {
+    const result = RecallResultSchema.safeParse({
+      memories: [],
+      omitted: [],
+      index: { groups: [], totalInScope: 0, countKind: "exact" },
+      usage: {
+        chars: 0,
+        estimatedTokens: 0,
+        counter: "heuristic",
+        byTier: { full: 0, digest: 0, index: 0 },
+      },
+      explain: { stages: [] },
+    });
+    expect(result.success).toBe(false);
+  });
+});

@@ -1,0 +1,30 @@
+{
+  "name": "mnemo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "既存の LLM アプリケーションの下に敷く認知レイヤー（monorepo root）",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,tsx,mts,cts,js,mjs,cjs,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mts,cts,js,mjs,cjs,json}\"",
+    "test": "pnpm -r --if-present run test",
+    "build": "pnpm -r --if-present run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.1",
+    "eslint": "10.10.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.12.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  }
+}
