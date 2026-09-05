@@ -168,13 +168,20 @@
 
 - **確かめていないこと**:
 
-  - **`runMigrations()`（`packages/postgres/src/migrate.ts`）に advisory lock が無く、
+  - ~~**`runMigrations()`（`packages/postgres/src/migrate.ts`）に advisory lock が無く、
     まっさらな DB に2プロセスが同時に初回マイグレーションを走らせると理論上失敗する**
-    （`CREATE TABLE observations` に `IF NOT EXISTS` が無いため）。この ADR の排他は
-    `scripts/run-db-tests.mjs` を経由した場合にのみ効くため、この段を通す限りは
-    2つの `test:db` プロセスが同時に `runMigrations()` の初回実行へ突入することは
-    構造的に無くなるが、**まっさらな DB に対して2プロセスを実際に同時起動して
-    このエラーを発生させたことは無い**。段階1では実測していない。
+    （`CREATE TABLE observations` に `IF NOT EXISTS` が無いため）。~~
+    **実測済み（[ADR 0017](./0017-runmigrations-advisory-lock.md)）。** まっさらな DB へ
+    N=2/N=4 で同時に `runMigrations()` を呼ぶと、試行した全件（各12回）で決定的に
+    失敗することを本物の PostgreSQL に対して確認した。衝突点は `CREATE TABLE
+    observations`（無印）だけでなく、`ensureMigrationsTable` の
+    `CREATE TABLE IF NOT EXISTS` と `0001_init.sql` 冒頭の `CREATE EXTENSION
+    IF NOT EXISTS` にも積み重なっていた。ADR 0017 で advisory lock による排他を
+    `runMigrations()` 自身に実装し、歯（`migrate-concurrency.test.ts`）で測っている。
+    なお、この ADR（0016）の排他は `scripts/run-db-tests.mjs` を経由した場合にのみ効き、
+    それを迂回する経路（`pnpm -r run test:db` を直接叩く等）には元々効かない
+    ——ADR 0017 の advisory lock は `runMigrations()` の中に入るため、
+    **迂回経路であっても効く**（この ADR の排他より広く効く）。
   - **門を通さず `pnpm -r run test:db` や `pnpm --parallel run test:db` を
     直接叩く経路には、この排他は一切効かない。** `scripts/run-db-tests.mjs` は
     ルートの `test` 門からしか呼ばれないため、これらを手元で直接叩けば
