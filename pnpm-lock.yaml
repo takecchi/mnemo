@@ -38,16 +38,16 @@ importers:
 
   examples/chat:
     dependencies:
-      '@mnemo/core':
+      '@mnemora/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@mnemo/openai':
+      '@mnemora/openai':
         specifier: workspace:*
         version: link:../../packages/openai
-      '@mnemo/postgres':
+      '@mnemora/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
-      '@mnemo/testkit':
+      '@mnemora/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit
     devDependencies:
@@ -76,7 +76,7 @@ importers:
 
   packages/openai:
     dependencies:
-      '@mnemo/core':
+      '@mnemora/core':
         specifier: workspace:*
         version: link:../core
       openai:
@@ -95,7 +95,7 @@ importers:
 
   packages/postgres:
     dependencies:
-      '@mnemo/core':
+      '@mnemora/core':
         specifier: workspace:*
         version: link:../core
       drizzle-orm:
@@ -105,7 +105,7 @@ importers:
         specifier: 8.23.0
         version: 8.23.0
     devDependencies:
-      '@mnemo/testkit':
+      '@mnemora/testkit':
         specifier: workspace:*
         version: link:../testkit
       '@types/pg':
@@ -123,7 +123,7 @@ importers:
 
   packages/testkit:
     dependencies:
-      '@mnemo/core':
+      '@mnemora/core':
         specifier: workspace:*
         version: link:../core
       vitest:

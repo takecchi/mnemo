@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { EmbeddingStatus } from "@mnemo/core";
-import type { Ctx, MemoryStore, RecallId } from "@mnemo/core";
+import type { EmbeddingStatus } from "@mnemora/core";
+import type { Ctx, MemoryStore, RecallId } from "@mnemora/core";
 import { buildNewMemoryFixture, buildNewObservationFixture } from "./test-data.js";
 
 export interface MemoryStoreConformanceOptions {

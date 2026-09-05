@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { EmbeddingSpaceId } from "@mnemo/core";
+import type { EmbeddingSpaceId } from "@mnemora/core";
 import {
   assertSafeIdentifier,
   embeddingSpaceIndexName,

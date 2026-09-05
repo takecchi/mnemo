@@ -1,5 +1,5 @@
 {
-  "name": "@mnemo/testkit",
+  "name": "@mnemora/testkit",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mnemo/core": "workspace:*",
+    "@mnemora/core": "workspace:*",
     "vitest": "5.0.0"
   },
   "devDependencies": {

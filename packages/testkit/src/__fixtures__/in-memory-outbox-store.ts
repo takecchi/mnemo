@@ -1,4 +1,4 @@
-import type { ClaimOutboxJobsOptions, Ctx, OutboxJobRecord, OutboxStore } from "@mnemo/core";
+import type { ClaimOutboxJobsOptions, Ctx, OutboxJobRecord, OutboxStore } from "@mnemora/core";
 
 /**
  * `OutboxStore` のインメモリ・プレースホルダ実装（roadmap.md 段階3）。

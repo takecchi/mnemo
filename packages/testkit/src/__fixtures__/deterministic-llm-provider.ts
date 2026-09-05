@@ -1,4 +1,4 @@
-import type { Ctx, LLMProvider, LLMResponse, PromptSpec, StructuredRequest } from "@mnemo/core";
+import type { Ctx, LLMProvider, LLMResponse, PromptSpec, StructuredRequest } from "@mnemora/core";
 
 /**
  * `LLMProvider` の決定的な擬似実装（roadmap.md 段階3・PR 本文「擬似物の扱い」）。

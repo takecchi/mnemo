@@ -13,12 +13,12 @@ import {
  * `runComparison` を、本物の Postgres に対して検査する。
  *
  * **⚠ 同じ値を両辺で使う比較は変化を検出できない**（PR 本文の注意）——ここでは
- * `fillerPairsSequence` の各要素についてそれぞれ独立に `runMnemoPath` を実行し、
- * 出力された `naiveChars`/`mnemoChars` が要素ごとに違う値になっていることまで確認する
+ * `fillerPairsSequence` の各要素についてそれぞれ独立に `runMnemoraPath` を実行し、
+ * 出力された `naiveChars`/`mnemoraChars` が要素ごとに違う値になっていることまで確認する
  * （同じ値を使い回すバグが混入すれば、この assertion で赤くなる）。
  */
 describe("examples/chat: runComparison（本物の Postgres）", () => {
-  it("会話が長いほど naive は伸び続け、mnemo は既定の limit で頭打ちになる", async () => {
+  it("会話が長いほど naive は伸び続け、mnemora は既定の limit で頭打ちになる", async () => {
     await resetTestDatabase();
     await getTestClient();
     const handle = await createExampleRuntime(requireDatabaseUrl(), {});
@@ -37,11 +37,11 @@ describe("examples/chat: runComparison（本物の Postgres）", () => {
       expect(long!.naiveChars).toBeGreaterThan(short!.naiveChars);
       // 2つの計測値が同じ値になっていない（同じ値を使い回すバグへの歯止め）。
       expect(long!.naiveChars).not.toBe(short!.naiveChars);
-      expect(long!.mnemoChars).not.toBe(short!.mnemoChars);
+      expect(long!.mnemoraChars).not.toBe(short!.mnemoraChars);
 
-      // mnemo/naive の比は会話が長くなるほど下がる（naive は無限に伸び、mnemo は
+      // mnemora/naive の比は会話が長くなるほど下がる（naive は無限に伸び、mnemora は
       // 既定 limit(10) と index band の固定費でほぼ頭打ちになるため）。
-      expect(long!.mnemoShareOfNaiveChars).toBeLessThan(short!.mnemoShareOfNaiveChars);
+      expect(long!.mnemoraShareOfNaiveChars).toBeLessThan(short!.mnemoraShareOfNaiveChars);
     } finally {
       await handle.close();
     }

@@ -15,7 +15,7 @@ import { OpenAILLMProvider } from "../llm-provider.js";
  * 採らない——それだと「1件パスした」という誤った印象を残す）。
  *
  * ローカルで実行するには:
- *   OPENAI_API_KEY=sk-... pnpm --filter @mnemo/openai test
+ *   OPENAI_API_KEY=sk-... pnpm --filter @mnemora/openai test
  */
 const apiKey = process.env.OPENAI_API_KEY;
 
@@ -26,7 +26,7 @@ describe("live: OpenAI (OPENAI_API_KEY が無い場合はこの describe 自体�
       model: "text-embedding-3-small",
       dimensions: 64,
     });
-    const [vector] = await provider.embed({ tenantId: "live-test" }, ["mnemo live test"]);
+    const [vector] = await provider.embed({ tenantId: "live-test" }, ["mnemora live test"]);
     expect(vector).toHaveLength(64);
   });
 

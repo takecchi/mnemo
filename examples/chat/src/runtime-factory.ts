@@ -1,5 +1,5 @@
-import type { Runtime } from "@mnemo/core";
-import { createRuntime } from "@mnemo/core";
+import type { Runtime } from "@mnemora/core";
+import { createRuntime } from "@mnemora/core";
 import {
   PostgresEventStore,
   PostgresMemoryStore,
@@ -11,7 +11,7 @@ import {
   registerEmbeddingSpace,
   runMigrations,
   sha256Hex,
-} from "@mnemo/postgres";
+} from "@mnemora/postgres";
 import type { EnvLike, ProviderMode } from "./providers.js";
 import { createProviders } from "./providers.js";
 

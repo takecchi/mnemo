@@ -1,4 +1,4 @@
-import type { RecallResult } from "@mnemo/core";
+import type { RecallResult } from "@mnemora/core";
 
 /**
  * `recall()` の返り値のうち、roadmap.md 段階7の完了条件そのものである

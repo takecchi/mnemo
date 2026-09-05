@@ -9,7 +9,7 @@ import { closeTestClient, getTestClient } from "./test-db.js";
  * `runMigrations`（`packages/postgres` の唯一のマイグレーション実行口、ADR 0001）の
  * 分岐を検査する。
  * - 既に適用済みのマイグレーションは再適用されない（`applied` が空になる）。
- * - 失敗したマイグレーションはロールバックされ、`_mnemo_migrations` に記録が残らない
+ * - 失敗したマイグレーションはロールバックされ、`_mnemora_migrations` に記録が残らない
  *   （中途半端な適用済み扱いにしない）。
  */
 describe("runMigrations", () => {
@@ -25,29 +25,29 @@ describe("runMigrations", () => {
 
   it("失敗したマイグレーションはロールバックされ、適用済みとして記録されない", async () => {
     const { pool } = await getTestClient();
-    const dir = mkdtempSync(join(tmpdir(), "mnemo-migrate-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "mnemora-migrate-test-"));
     writeFileSync(
       join(dir, "9001_broken.sql"),
-      "CREATE TABLE mnemo_migrate_test_broken (id int); INSERT INTO this_table_does_not_exist VALUES (1);",
+      "CREATE TABLE mnemora_migrate_test_broken (id int); INSERT INTO this_table_does_not_exist VALUES (1);",
     );
 
     await expect(runMigrations(pool, dir)).rejects.toThrow(/9001_broken\.sql/);
 
-    const recorded = await pool.query("SELECT name FROM _mnemo_migrations WHERE name = $1", [
+    const recorded = await pool.query("SELECT name FROM _mnemora_migrations WHERE name = $1", [
       "9001_broken.sql",
     ]);
     expect(recorded.rows).toEqual([]);
 
     // ロールバックされているため、ファイル内の最初の文（テーブル作成）の効果も残っていない。
     const tableExists = await pool.query(
-      "SELECT to_regclass('mnemo_migrate_test_broken') IS NOT NULL AS exists",
+      "SELECT to_regclass('mnemora_migrate_test_broken') IS NOT NULL AS exists",
     );
     expect(tableExists.rows[0]?.exists).toBe(false);
   });
 
   it("一部だけ未適用の場合、未適用のものだけを名前の昇順で適用する", async () => {
     const { pool } = await getTestClient();
-    const dir = mkdtempSync(join(tmpdir(), "mnemo-migrate-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "mnemora-migrate-test-"));
     writeFileSync(join(dir, "0001_noop_a.sql"), "SELECT 1;");
     writeFileSync(join(dir, "0002_noop_b.sql"), "SELECT 1;");
 
@@ -58,7 +58,7 @@ describe("runMigrations", () => {
     expect(second.applied).toEqual([]);
 
     // 後始末: このテスト専用の記録を消す（他テストの「全て適用済み」判定を汚さないため）。
-    await pool.query("DELETE FROM _mnemo_migrations WHERE name IN ($1, $2)", [
+    await pool.query("DELETE FROM _mnemora_migrations WHERE name IN ($1, $2)", [
       "0001_noop_a.sql",
       "0002_noop_b.sql",
     ]);

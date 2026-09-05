@@ -10,8 +10,8 @@ roadmap.md 段階7「サンプル」。**このサンプルの主目的は「動
 
 同じ会話に対して2つの経路を並べて走らせ、実際にプロンプトへ積む量を実測して比較する。
 
-- **経路A（naive）**: 会話ログを全部プロンプトへ積む（mnemo を使わない、今の普通のやり方）。
-- **経路B（mnemo）**: `observe()` で会話を取り込み、`recall()` が返した `memories`（の
+- **経路A（naive）**: 会話ログを全部プロンプトへ積む（mnemora を使わない、今の普通のやり方）。
+- **経路B（mnemora）**: `observe()` で会話を取り込み、`recall()` が返した `memories`（の
   digest）と `index` だけを積む。`budget` を渡すと実際に切り詰められる。
 
 ---
@@ -25,35 +25,35 @@ roadmap.md 段階7「サンプル」。**このサンプルの主目的は「動
 ```bash
 # リポジトリルートで
 pnpm install
-pnpm run build   # @mnemo/core 等の workspace パッケージを dist へビルドする
+pnpm run build   # @mnemora/core 等の workspace パッケージを dist へビルドする
                  # （tsx で直接実行する examples/chat の CLI は dist を node_modules 経由で
                  #   解決するため、ビルドが要る。vitest はテスト時だけ src を直接見るため
                  #   ビルド無しでも動く——後述「テスト」参照）
 
 export DATABASE_URL="postgresql://user@host/dbname?host=/path/to/sockdir&port=5544"
-pnpm --filter @mnemo/postgres run migrate
+pnpm --filter @mnemora/postgres run migrate
 
 # observe → recall の往復、omitted/usage/budget を実演する
-pnpm --filter @mnemo/example-chat run chat
+pnpm --filter @mnemora/example-chat run chat
 
 # 会話の長さを変えて、経路A/経路Bの量を実測する（このサンプルの主目的）
-pnpm --filter @mnemo/example-chat run compare
+pnpm --filter @mnemora/example-chat run compare
 ```
 
 `OPENAI_API_KEY` を環境に設定すると本物の OpenAI（LLM 抽出・Embedding）で動く。
-設定しなければ `@mnemo/testkit` の決定的な擬似 provider で動く——**どちらで動いているかは
+設定しなければ `@mnemora/testkit` の決定的な擬似 provider で動く——**どちらで動いているかは
 起動直後に必ず画面へ出す**（黙って擬似物にフォールバックしない）。
 
 ### テスト
 
 ```bash
 export DATABASE_URL=...
-pnpm --filter @mnemo/example-chat run test:db
+pnpm --filter @mnemora/example-chat run test:db
 ```
 
 本物の Postgres に接続する（擬似物では代替しない）。`observe → recall` の往復・
 `budget` による切り詰め・`runComparison` の量の計測をすべて実DBに対して検査する。
-ビルド不要（`vitest.config.mts` が `@mnemo/*` を各パッケージの `src` へ直接エイリアスする）。
+ビルド不要（`vitest.config.mts` が `@mnemora/*` を各パッケージの `src` へ直接エイリアスする）。
 
 ---
 
@@ -81,12 +81,12 @@ pnpm --filter @mnemo/example-chat run test:db
 ここで見せたいのは「切り詰めずに、そのままだと何文字になるか」であり、強制ではなく
 計測の比較だからである（budget が実際に切り詰めることは `chat` サブコマンドの方で見せる）。
 
-### 実測結果（2026-09-05、`@mnemo/testkit` の決定的な擬似 provider・`pgvector/pgvector:pg17` 相当のローカル環境）
+### 実測結果（2026-09-05、`@mnemora/testkit` の決定的な擬似 provider・`pgvector/pgvector:pg17` 相当のローカル環境）
 
-`pnpm --filter @mnemo/example-chat run compare` の実際の出力（再現可能。同じ環境・
+`pnpm --filter @mnemora/example-chat run compare` の実際の出力（再現可能。同じ環境・
 同じ会話生成関数であれば同じ数字になる——`buildConversation()` は乱数を使わない）。
 
-| 会話ターン数 | naive chars | naive tokens(概算) | mnemo chars | mnemo tokens(概算) | mnemo/naive (chars) |
+| 会話ターン数 | naive chars | naive tokens(概算) | mnemora chars | mnemora tokens(概算) | mnemora/naive (chars) |
 |---|---|---|---|---|---|
 | 2 | 49 | 13 | 131 | 33 | **267.3%** |
 | 4 | 97 | 25 | 142 | 36 | **146.4%** |
@@ -101,9 +101,14 @@ pnpm --filter @mnemo/example-chat run test:db
 | 322 | 8134 | 2034 | 305 | 79 | 3.7% |
 | 642 | 16223 | 4056 | 305 | 79 | 1.9% |
 
+**⚠ この表の数値は 2026-09-05 に、改名前の名前（`mnemo`）で走らせた実測そのままである。**
+`mnemora` への改名は呼称の変更であって計測の経路には触れていないが、**改名後に測り直しては
+いない**——この改名作業を行った環境には Postgres が無く、`compare` を実行できなかった。
+列見出しだけは現在の `compare` の出力（`mnemora chars` 等）に合わせてある。
+
 ### 正直に読むべきこと
 
-**⚠ 会話が短いうちは経路Bのほうが多い。** `2`〜`6` ターンでは mnemo のほうが naive より
+**⚠ 会話が短いうちは経路Bのほうが多い。** `2`〜`6` ターンでは mnemora のほうが naive より
 **大きい**（最大 +167%）。理由は2つ:
 
 1. `recall()` は index band（目次帯・第3階の群カウント）の JSON を必ず含む固定費を持つ。
@@ -112,9 +117,9 @@ pnpm --filter @mnemo/example-chat run test:db
    digest という形の一定のオーバーヘッドがある。
 
 **この実測では、`8` ターン（filler 往復3組＋事実表明1組）から経路Bが下回り始める。**
-それ以降は単調に差が開く——naive は会話が伸びる限り線形に増え続けるのに対し、mnemo は
+それ以降は単調に差が開く——naive は会話が伸びる限り線形に増え続けるのに対し、mnemora は
 既定の `recall()` の `limit`（10件）と index band の固定費でほぼ頭打ちになる
-（`162`→`642` ターンで naive は 4倍になるが mnemo はほぼ変わらない）。
+（`162`→`642` ターンで naive は 4倍になるが mnemora はほぼ変わらない）。
 
 **この閾値（8ターン）は、この会話生成関数・この既定パラメータ（`limit=10` 等）・
 この擬似 provider に固有の数字であり、一般的な閾値として主張しない。** 会話の内容
@@ -143,7 +148,7 @@ pnpm --filter @mnemo/example-chat run test:db
 **642ターン（321件のうち10件だけを返す＝ naive の 1.9%）まで削っても、冒頭の事実は落ちなかった。**
 これが「1.9%」という数字に意味を与えている唯一の根拠である。
 
-この検査は `src/__tests__/mnemo-path.postgres.test.ts` に歯として入れてある（162ターン）。
+この検査は `src/__tests__/mnemora-path.postgres.test.ts` に歯として入れてある（162ターン）。
 歯には「実際に大幅な絞り込みが起きていること」の前提検査も含めてある——
 絞り込みが起きていなければ「残った」ことに意味が無く、`limit` が緩んだ瞬間に
 この歯は無意味な緑になるため。
@@ -167,7 +172,7 @@ pnpm --filter @mnemo/example-chat run test:db
   実 API キーが無いため、**確認していない。**
 - **naive path はシステムプロンプト・ツール定義を含まない生の transcript だけを測る。**
   実際のアプリケーションはこれらが上乗せされる分、絶対値としての削減幅はさらに
-  大きくなりうる（逆に mnemo 側の固定費の比率は相対的に小さくなる）。
+  大きくなりうる（逆に mnemora 側の固定費の比率は相対的に小さくなる）。
 - **`budget` は `memories` tier（digest の合計文字数）だけを切り詰め、`index` tier
   （目次帯の JSON）は切り詰めない。** これは意図した設計である——目次帯の唯一の存在理由は
   「recall が0件でも、何が在るかは言える」ことであり
@@ -184,7 +189,7 @@ pnpm --filter @mnemo/example-chat run test:db
   予算の項目名（`maxChars` → `maxMemoryChars`）と `share` の定義を直してある
   （[docs/recall.md §6](../../docs/recall.md) の2つの訂正節を参照）。
   「セッション全体でどれだけ削れたか」ではない（[docs/recall.md §6](../../docs/recall.md)
-  「セッション基準値を持たない」を参照。mnemo はセッションという概念を持たない）。
+  「セッション基準値を持たない」を参照。mnemora はセッションという概念を持たない）。
 - この比較は**会話1本・固定のシナリオ**に基づく。実際の効果は会話の性質
   （どれだけ「思い出す価値のある事実」対「filler」の比率があるか）に強く依存する。
 
@@ -209,11 +214,11 @@ pnpm --filter @mnemo/example-chat run test:db
 ## 設計上の決めたこと（本 PR の裁量）
 
 - **`ingestConversation`（取り込み）と `queryRecall`（想起）を分離した。** 当初
-  `runMnemoPath` に両方を混ぜていたところ、`budget` 有り/無しで2回 recall を試すために
+  `runMnemoraPath` に両方を混ぜていたところ、`budget` 有り/無しで2回 recall を試すために
   同じ会話をもう一度 `observe()` してしまい、Memory が重複するバグを自分で踏んだ
   （`externalId` を設定していなかったため）。修正として `externalId: turn-${index}` を
   付けて冪等にした上で、取り込みと想起を別関数に分けた。**この経緯は
-  `src/mnemo-path.ts` のコメントに残してある。**
+  `src/mnemora-path.ts` のコメントに残してある。**
 - 会話の長さを変えて測る際（`runComparison`）、**長さごとに別のテナントを使う。**
   同じテナントに会話を積み増すと、後の計測が前の会話の記憶を引きずり、
   「その長さの会話単体で何文字になるか」を独立に測れなくなるため
@@ -226,17 +231,17 @@ pnpm --filter @mnemo/example-chat run test:db
 
 ## 本 PR で見つけて直した既存の不具合
 
-`@mnemo/core` の `package.json` に `"type": "module"` が無く、`dist/` が
-CommonJS として出力されていた（他の3パッケージ——`@mnemo/openai`・`@mnemo/postgres`・
-`@mnemo/testkit`——はいずれも `"type": "module"` を持ち ESM を出力する）。
+`@mnemora/core` の `package.json` に `"type": "module"` が無く、`dist/` が
+CommonJS として出力されていた（他の3パッケージ——`@mnemora/openai`・`@mnemora/postgres`・
+`@mnemora/testkit`——はいずれも `"type": "module"` を持ち ESM を出力する）。
 
 このサンプルアプリが `tsx` で `dist` を実際に実行する初めての利用者になったところ、
-`import { heuristicTokenCounter } from "@mnemo/core"` が
+`import { heuristicTokenCounter } from "@mnemora/core"` が
 `SyntaxError: does not provide an export named 'heuristicTokenCounter'` で落ちた
 （プレーンな `node` 経由の ESM import では問題が顕在化せず、`tsx` のローダー経由でのみ
 再現した——CJS→ESM 相互運用の名前付き export 検出が、ローダーの実装によって挙動が
 変わるため）。これまでの `packages/*` のテストはすべて `vitest.config.mts` が
-`@mnemo/core` を `src` へ直接エイリアスしており、`dist` を経由する経路が
+`@mnemora/core` を `src` へ直接エイリアスしており、`dist` を経由する経路が
 一度も検査されていなかった。`packages/core/package.json` に `"type": "module"` を
 追加し、`dist/index.js` が名前付き `export` 文を持つ本物の ESM になることを確認して
 修正した。**新しい ADR は起こしていない**——既存のどの ADR の決定も覆していない、

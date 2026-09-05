@@ -1,6 +1,6 @@
-import type { EmbeddingProvider, LLMProvider } from "@mnemo/core";
-import { OpenAIEmbeddingProvider, OpenAILLMProvider } from "@mnemo/openai";
-import { DeterministicEmbeddingProvider, DeterministicLLMProvider } from "@mnemo/testkit";
+import type { EmbeddingProvider, LLMProvider } from "@mnemora/core";
+import { OpenAIEmbeddingProvider, OpenAILLMProvider } from "@mnemora/openai";
+import { DeterministicEmbeddingProvider, DeterministicLLMProvider } from "@mnemora/testkit";
 
 /**
  * サンプルアプリが実際に使う provider の切り替え（PR 本文「LLM/Embedding は実 API キーが

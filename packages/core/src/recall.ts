@@ -316,7 +316,7 @@ export interface RecallBudget {
   maxMemoryTokens?: number;
   /**
    * 呼び出し側が申告する「プロンプト全体の」トークン予算。
-   * `memories` tier の切り詰めにのみ使う（mnemo はプロンプトを組み立てないため、
+   * `memories` tier の切り詰めにのみ使う（mnemora はプロンプトを組み立てないため、
    * 全体を測ることは原理的にできない。docs/recall.md §6「正直に書くべき限界」）。
    */
   promptBudgetTokens?: number;

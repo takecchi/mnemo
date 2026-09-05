@@ -41,7 +41,7 @@
 | `packages/testkit` | adapter の適合テスト一式（conformance suite）とインメモリのプレースホルダ実装 |
 | `packages/postgres` | `MemoryStore` / `VectorStore` / `EventStore` / `OutboxStore` / `TenantSettingsStore`。手書きマイグレーション |
 | `packages/openai` | `EmbeddingProvider` / `LLMProvider` |
-| `examples/chat` | サンプル CLI と、**naive（会話ログ全部）と mnemo を実測比較する `compare`** |
+| `examples/chat` | サンプル CLI と、**naive（会話ログ全部）と mnemora を実測比較する `compare`** |
 
 **Phase 1 に入っていないもの**は `docs/roadmap.md` §1.3 の通り（関係グラフ本体・reranking・
 `reflect()` の実運用・`packages/bullmq`・HTTP server）。
@@ -88,5 +88,14 @@
 
 ## 名前について
 
-**`mnemo` / `@mnemo/*` は仮である。**確定していない。
-経緯は [docs/vision.md](./docs/vision.md) の「名前について」にある。
+**名前は `mnemora`、スコープは `@mnemora/*` に確定している。**もう仮ではない。
+npm の org `@mnemora` はオーナーが作成し、使用できることを確認した（確認したのは
+オーナーであり、このリポジトリの作業者ではない）。
+
+**`mnemo` / `@mnemo/*` という旧名で新しい記述を書かないこと。**ただし
+`docs/vision.md`「名前について」の経緯節・`docs/roadmap.md` §5.1 と §6・
+`docs/memory-model.md` の「確かめていないこと」に残る `mnemo` は**当時の記録であり、
+書き換えない**（他人の npm パッケージ `mnemo` と Rufus::Mnemo への言及を含む）。
+
+決定の記録は [ADR 0014](./docs/decisions/0014-package-name-mnemora.md)、
+改名前の経緯は [docs/vision.md](./docs/vision.md) の「名前について」にある。

@@ -1,4 +1,4 @@
-// packages/core — mnemo の core パッケージ。zod 以外の実行時依存を持たない。
+// packages/core — mnemora の core パッケージ。zod 以外の実行時依存を持たない。
 // このファイルからのみ、外部から見えるべき名前をすべて名前付きで export する。
 
 export * from "./ctx.js";

@@ -156,7 +156,7 @@ describe("GroupCountSchema — D12: key は string | null", () => {
   it("accepts key が文字列", () => {
     const result = GroupCountSchema.safeParse({
       axis: "subject",
-      key: "project/mnemo",
+      key: "project/mnemora",
       count: 10,
       countKind: "exact",
     });
@@ -233,7 +233,7 @@ describe("RecallResultSchema", () => {
       memories: [],
       omitted: [{ kind: "filtered", condition: "period", count: 3, countKind: "exact" }],
       index: {
-        groups: [{ axis: "subject", key: "project/mnemo", count: 412, countKind: "exact" }],
+        groups: [{ axis: "subject", key: "project/mnemora", count: 412, countKind: "exact" }],
         totalInScope: 412,
         countKind: "exact",
       },

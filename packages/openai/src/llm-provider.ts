@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { Ctx, LLMProvider, LLMResponse, PromptSpec, StructuredRequest } from "@mnemo/core";
+import type { Ctx, LLMProvider, LLMResponse, PromptSpec, StructuredRequest } from "@mnemora/core";
 import { translateForOpenAIStructuredOutput } from "./json-schema.js";
 
 /**
@@ -85,7 +85,7 @@ export class OpenAILLMProvider implements LLMProvider {
   }
 
   async completeStructured<T>(_ctx: Ctx, req: StructuredRequest<T>): Promise<T> {
-    const format = translateForOpenAIStructuredOutput("mnemo_structured_output", req.schema);
+    const format = translateForOpenAIStructuredOutput("mnemora_structured_output", req.schema);
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: toOpenAIMessages(req.prompt),

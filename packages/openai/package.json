@@ -1,5 +1,5 @@
 {
-  "name": "@mnemo/openai",
+  "name": "@mnemora/openai",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mnemo/core": "workspace:*",
+    "@mnemora/core": "workspace:*",
     "openai": "7.10.0",
     "zod": "4.5.4"
   },

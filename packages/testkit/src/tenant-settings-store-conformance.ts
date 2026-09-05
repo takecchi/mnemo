@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_HALF_LIFE_HOURS } from "@mnemo/core";
-import type { Ctx, TenantSettingsStore } from "@mnemo/core";
+import { DEFAULT_HALF_LIFE_HOURS } from "@mnemora/core";
+import type { Ctx, TenantSettingsStore } from "@mnemora/core";
 
 export interface TenantSettingsStoreConformanceOptions {
   name: string;

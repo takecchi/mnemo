@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Ctx, EventStore, MemoryId } from "@mnemo/core";
+import type { Ctx, EventStore, MemoryId } from "@mnemora/core";
 import { buildNewMemoryEventFixture } from "./test-data.js";
 
 export interface EventStoreConformanceOptions {

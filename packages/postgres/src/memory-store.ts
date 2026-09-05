@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { defaultDecayStrategy } from "@mnemo/core";
+import { defaultDecayStrategy } from "@mnemora/core";
 import type {
   Ctx,
   EmbeddingStatus,
@@ -17,7 +17,7 @@ import type {
   RecallId,
   RecallScope,
   ScopeAggregate,
-} from "@mnemo/core";
+} from "@mnemora/core";
 import type { Db } from "./client.js";
 import {
   isUuidLike,

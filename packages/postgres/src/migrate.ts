@@ -26,9 +26,39 @@ interface AppliedMigration {
   name: string;
 }
 
+/**
+ * 旧名の台帳 `_mnemo_migrations` を新名 `_mnemora_migrations` へ引き継ぐ。
+ *
+ * `mnemo` → `mnemora` の改名より前に作られた DB では、適用済みの記録が旧名のテーブルに
+ * 入っている。引き継がずに新名の台帳を作ると**空の台帳を読むことになり、
+ * `migrations/*.sql` を最初からやり直そうとして落ちる**（`0001_init.sql` の
+ * `CREATE TABLE observations` は `IF NOT EXISTS` を付けていない）。
+ *
+ * 分岐は3つで、いずれも冪等（何度走らせても同じ状態に落ち着く）:
+ * - 旧名が在り、新名が無い → RENAME する（引き継ぎが起きるのはこの一度だけ）
+ * - 旧名が無い → 何もしない（まっさらな DB・引き継ぎ済みの DB）
+ * - 新旧どちらも在る → 何もしない。**新名の台帳を上書きしない**し、旧名のほうも
+ *   勝手には消さない——中身の突き合わせは人間の判断に属する
+ *
+ * **`ensureMigrationsTable` より前に呼ぶこと。**逆順にすると、先に空の
+ * `_mnemora_migrations` が出来て「新旧どちらも在る」に落ち、引き継ぎが起きない。
+ */
+async function handOverLegacyMigrationsTable(pool: Pool): Promise<void> {
+  await pool.query(`
+    DO $handover$
+    BEGIN
+      IF to_regclass('_mnemo_migrations') IS NOT NULL
+         AND to_regclass('_mnemora_migrations') IS NULL THEN
+        ALTER TABLE _mnemo_migrations RENAME TO _mnemora_migrations;
+      END IF;
+    END
+    $handover$;
+  `);
+}
+
 async function ensureMigrationsTable(pool: Pool): Promise<void> {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS _mnemo_migrations (
+    CREATE TABLE IF NOT EXISTS _mnemora_migrations (
       name         text        PRIMARY KEY,
       applied_at   timestamptz NOT NULL DEFAULT now()
     );
@@ -42,20 +72,24 @@ function listMigrationFiles(migrationsDir: string): string[] {
 }
 
 /**
- * 未適用の `migrations/*.sql` を名前の昇順で適用する。適用済みは `_mnemo_migrations` に
+ * 未適用の `migrations/*.sql` を名前の昇順で適用する。適用済みは `_mnemora_migrations` に
  * 記録し、二重適用しない（何度呼んでも安全 = 冪等なマイグレーション実行）。
  *
+ * 台帳を読む**前に**、旧名 `_mnemo_migrations` からの引き継ぎを一度通す
+ * （`handOverLegacyMigrationsTable`）。
+ *
  * `migrationsDir` はテスト用の差し替え口（不正なマイグレーションがロールバックされ、
- * `_mnemo_migrations` に記録されないことを検査するため）。省略時は本番の
+ * `_mnemora_migrations` に記録されないことを検査するため）。省略時は本番の
  * `migrations/` ディレクトリを使う。
  */
 export async function runMigrations(
   pool: Pool,
   migrationsDir: string = DEFAULT_MIGRATIONS_DIR,
 ): Promise<{ applied: string[] }> {
+  await handOverLegacyMigrationsTable(pool);
   await ensureMigrationsTable(pool);
 
-  const { rows } = await pool.query<AppliedMigration>("SELECT name FROM _mnemo_migrations");
+  const { rows } = await pool.query<AppliedMigration>("SELECT name FROM _mnemora_migrations");
   const alreadyApplied = new Set(rows.map((row) => row.name));
 
   const applied: string[] = [];
@@ -68,7 +102,7 @@ export async function runMigrations(
     try {
       await client.query("BEGIN");
       await client.query(sql);
-      await client.query("INSERT INTO _mnemo_migrations (name) VALUES ($1)", [file]);
+      await client.query("INSERT INTO _mnemora_migrations (name) VALUES ($1)", [file]);
       await client.query("COMMIT");
       applied.push(file);
     } catch (err) {

@@ -15,7 +15,7 @@ export interface ConversationTurn {
 export interface Conversation {
   /** 事実の表明 + filler の往復。naive path はこれを丸ごとプロンプトへ積む。 */
   turns: ConversationTurn[];
-  /** mnemo path が observe() する対象（user の発話のみ。決めたことは README 参照）。 */
+  /** mnemora path が observe() する対象（user の発話のみ。決めたことは README 参照）。 */
   userUtterances: ConversationTurn[];
   /** 終盤に置く、冒頭の事実を参照する質問。recall() の query に使う。 */
   query: string;

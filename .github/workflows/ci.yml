@@ -52,7 +52,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: mnemo_ci
+          POSTGRES_DB: mnemora_ci
         ports:
           - 5432:5432
         options: >-
@@ -61,7 +61,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mnemo_ci
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mnemora_ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,33 +79,33 @@ jobs:
 
       - name: Enable required extensions (vector / btree_gin / pgcrypto)
         run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -d mnemo_ci -c "select 1;" \
-            && PGPASSWORD=postgres psql -h localhost -U postgres -d mnemo_ci \
+          PGPASSWORD=postgres psql -h localhost -U postgres -d mnemora_ci -c "select 1;" \
+            && PGPASSWORD=postgres psql -h localhost -U postgres -d mnemora_ci \
               -c "CREATE EXTENSION IF NOT EXISTS vector;" \
               -c "CREATE EXTENSION IF NOT EXISTS btree_gin;" \
               -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
-      - name: Build @mnemo/core (postgres package depends on it)
-        run: pnpm --filter @mnemo/core run build
+      - name: Build @mnemora/core (postgres package depends on it)
+        run: pnpm --filter @mnemora/core run build
 
-      - name: Typecheck @mnemo/postgres
-        run: pnpm --filter @mnemo/postgres run typecheck
+      - name: Typecheck @mnemora/postgres
+        run: pnpm --filter @mnemora/postgres run typecheck
 
       - name: Run migrations (packages/postgres の唯一のマイグレーション実行口)
-        run: pnpm --filter @mnemo/postgres run migrate
+        run: pnpm --filter @mnemora/postgres run migrate
 
       - name: Run postgres conformance / EXPLAIN / ADR 0011 tests against the real database
-        run: pnpm --filter @mnemo/postgres run test:db
+        run: pnpm --filter @mnemora/postgres run test:db
 
-      - name: Build @mnemo/postgres
-        run: pnpm --filter @mnemo/postgres run build
+      - name: Build @mnemora/postgres
+        run: pnpm --filter @mnemora/postgres run build
 
   example-chat:
     name: examples/chat (本物の Postgres + pgvector、擬似 provider)
     runs-on: ubuntu-latest
     # roadmap.md 段階7の完了条件: 「サンプルアプリが observe → recall の往復を実演し、
     # omitted と usage を画面またはログに可視化する」。PR 本文「サンプルアプリ自体が
-    # 壊れていないことを CI で検査する」——LLM/Embedding は @mnemo/testkit の決定的な
+    # 壊れていないことを CI で検査する」——LLM/Embedding は @mnemora/testkit の決定的な
     # 擬似 provider（OPENAI_API_KEY を設定しない）で置き換えるが、DB は擬似物で
     # 代替しない。本物の Postgres の service container に対して実行する。
     services:
@@ -114,7 +114,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: mnemo_ci
+          POSTGRES_DB: mnemora_ci
         ports:
           - 5432:5432
         options: >-
@@ -123,7 +123,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mnemo_ci
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mnemora_ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -141,17 +141,17 @@ jobs:
 
       - name: Enable required extensions (vector / btree_gin / pgcrypto)
         run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -d mnemo_ci -c "select 1;" \
-            && PGPASSWORD=postgres psql -h localhost -U postgres -d mnemo_ci \
+          PGPASSWORD=postgres psql -h localhost -U postgres -d mnemora_ci -c "select 1;" \
+            && PGPASSWORD=postgres psql -h localhost -U postgres -d mnemora_ci \
               -c "CREATE EXTENSION IF NOT EXISTS vector;" \
               -c "CREATE EXTENSION IF NOT EXISTS btree_gin;" \
               -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
       - name: Typecheck examples/chat
-        run: pnpm --filter @mnemo/example-chat run typecheck
+        run: pnpm --filter @mnemora/example-chat run typecheck
 
       - name: Run migrations (packages/postgres の唯一のマイグレーション実行口)
-        run: pnpm --filter @mnemo/postgres run migrate
+        run: pnpm --filter @mnemora/postgres run migrate
 
       - name: Run examples/chat の observe→recall 往復・量の比較テストを本物の DB に対して実行
-        run: pnpm --filter @mnemo/example-chat run test:db
+        run: pnpm --filter @mnemora/example-chat run test:db

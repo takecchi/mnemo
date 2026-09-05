@@ -1,4 +1,4 @@
-import type { TokenCounter } from "@mnemo/core";
+import type { TokenCounter } from "@mnemora/core";
 import type { Conversation } from "./scenario.js";
 
 export interface PathMeasurement {
@@ -8,9 +8,9 @@ export interface PathMeasurement {
 }
 
 /**
- * 経路A（naive）: 会話ログを全部プロンプトへ積む、mnemo を使わない今の普通のやり方。
+ * 経路A（naive）: 会話ログを全部プロンプトへ積む、mnemora を使わない今の普通のやり方。
  *
- * ここで作るのは「システムプロンプト無しの生の transcript」だけである——mnemo が
+ * ここで作るのは「システムプロンプト無しの生の transcript」だけである——mnemora が
  * 何をどれだけ削れているかを見るための最小構成であり、実際のアプリケーションは
  * これにシステムプロンプトやツール定義がさらに乗る分、削減の絶対値はここで測る
  * 数字よりも大きくなりうる（examples/chat/README.md「限界」参照）。

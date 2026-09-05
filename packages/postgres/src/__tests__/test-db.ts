@@ -1,4 +1,4 @@
-import type { EmbeddingSpaceId } from "@mnemo/core";
+import type { EmbeddingSpaceId } from "@mnemora/core";
 import { createPostgresClient, type PostgresClient } from "../client.js";
 import { runMigrations } from "../migrate.js";
 import { registerEmbeddingSpace } from "../vector-space.js";
@@ -17,7 +17,7 @@ export function requireDatabaseUrl(): string {
     throw new Error(
       "DATABASE_URL が設定されていません。packages/postgres のテストは本物の Postgres + " +
         "pgvector が必要（擬似物では代替しない）。ローカルでは export DATABASE_URL=... を " +
-        "設定してから `pnpm --filter @mnemo/postgres run test:db` を実行すること。",
+        "設定してから `pnpm --filter @mnemora/postgres run test:db` を実行すること。",
     );
   }
   return url;

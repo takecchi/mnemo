@@ -2,7 +2,7 @@
 // 「testkit の適合テストの雛形（2テナント分のデータを入れて走らせる枠組み）が、
 //   プレースホルダ実装に対して動く」
 
-import type { Ctx } from "@mnemo/core";
+import type { Ctx } from "@mnemora/core";
 import { describeEventStoreConformance } from "../event-store-conformance.js";
 import { describeMemoryStoreConformance } from "../memory-store-conformance.js";
 import { describeOutboxStoreConformance } from "../outbox-store-conformance.js";

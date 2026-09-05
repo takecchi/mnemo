@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { EmbeddingSpaceId } from "@mnemo/core";
+import type { EmbeddingSpaceId } from "@mnemora/core";
 
 /**
  * PostgreSQL の識別子は 63 バイトまで（NAMEDATALEN - 1）。

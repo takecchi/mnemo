@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
-import type { Ctx } from "@mnemo/core";
+import type { Ctx } from "@mnemora/core";
 import { buildConversation } from "../scenario.js";
-import { ingestConversation, queryRecall } from "../mnemo-path.js";
+import { ingestConversation, queryRecall } from "../mnemora-path.js";
 import { createExampleRuntime } from "../runtime-factory.js";
 import {
   closeTestClient,
@@ -15,7 +15,7 @@ import {
  * omitted と usage を画面またはログに可視化する」を、本物の Postgres に対して実際に
  * 検査する（PR 本文「サンプルアプリ自体が壊れていないことを CI で検査する」）。
  *
- * provider は `@mnemo/testkit` の決定的な擬似実装（`createExampleRuntime` に
+ * provider は `@mnemora/testkit` の決定的な擬似実装（`createExampleRuntime` に
  * `env: {}` を渡し、`OPENAI_API_KEY` の有無に関わらず deterministic モードを強制する）。
  * DB は擬似物で代替しない——本物の Postgres + pgvector に対して実行する。
  */

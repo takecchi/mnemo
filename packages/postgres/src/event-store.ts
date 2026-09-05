@@ -6,7 +6,7 @@ import type {
   EventStore,
   MemoryEvent,
   NewMemoryEvent,
-} from "@mnemo/core";
+} from "@mnemora/core";
 import type { Db } from "./client.js";
 import { rowToMemoryEvent, type MemoryEventRow } from "./mapping.js";
 

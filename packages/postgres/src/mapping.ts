@@ -10,7 +10,7 @@ import type {
   OutboxJobKind,
   OutboxJobRecord,
   Provenance,
-} from "@mnemo/core";
+} from "@mnemora/core";
 
 /**
  * DB の行（`pg` ドライバが返す生の行。列名は snake_case）を core の型へ変換する。

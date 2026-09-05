@@ -1,5 +1,5 @@
-import { defaultDecayStrategy } from "@mnemo/core";
-import type { NewMemory, NewMemoryEvent, NewObservation } from "@mnemo/core";
+import { defaultDecayStrategy } from "@mnemora/core";
+import type { NewMemory, NewMemoryEvent, NewObservation } from "@mnemora/core";
 
 /**
  * 適合テスト（および testkit 自身の自己テスト）で使う、妥当な `NewMemory` のひな型。

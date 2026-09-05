@@ -1,4 +1,4 @@
-import type { Ctx, EmbeddingProvider, EmbeddingSpaceId } from "@mnemo/core";
+import type { Ctx, EmbeddingProvider, EmbeddingSpaceId } from "@mnemora/core";
 
 /**
  * `EmbeddingProvider` の決定的な擬似実装（roadmap.md 段階3・PR 本文「擬似物の扱い」）。

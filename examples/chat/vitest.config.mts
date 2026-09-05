@@ -11,14 +11,14 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@mnemo/core": fileURLToPath(new URL("../../packages/core/src/index.ts", import.meta.url)),
-      "@mnemo/openai": fileURLToPath(
+      "@mnemora/core": fileURLToPath(new URL("../../packages/core/src/index.ts", import.meta.url)),
+      "@mnemora/openai": fileURLToPath(
         new URL("../../packages/openai/src/index.ts", import.meta.url),
       ),
-      "@mnemo/postgres": fileURLToPath(
+      "@mnemora/postgres": fileURLToPath(
         new URL("../../packages/postgres/src/index.ts", import.meta.url),
       ),
-      "@mnemo/testkit": fileURLToPath(
+      "@mnemora/testkit": fileURLToPath(
         new URL("../../packages/testkit/src/index.ts", import.meta.url),
       ),
     },

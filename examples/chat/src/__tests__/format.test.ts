@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RecallResult } from "@mnemo/core";
+import type { RecallResult } from "@mnemora/core";
 import { formatRecall } from "../format.js";
 
 function baseResult(overrides: Partial<RecallResult> = {}): RecallResult {

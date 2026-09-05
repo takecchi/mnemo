@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
-import type { Ctx } from "@mnemo/core";
-import { createRuntime } from "@mnemo/core";
-import { DeterministicEmbeddingProvider, DeterministicLLMProvider } from "@mnemo/testkit";
+import type { Ctx } from "@mnemora/core";
+import { createRuntime } from "@mnemora/core";
+import { DeterministicEmbeddingProvider, DeterministicLLMProvider } from "@mnemora/testkit";
 import { PostgresMemoryStore } from "../memory-store.js";
 import { PostgresVectorStore } from "../vector-store.js";
 import { PostgresEventStore } from "../event-store.js";
@@ -22,7 +22,7 @@ import {
  * （PR 本文「擬似物の扱い」参照）。
  *
  * **正直に書く**: ここで使う `LLMProvider` / `EmbeddingProvider` は
- * `@mnemo/testkit` の決定的な擬似実装（`DeterministicLLMProvider` /
+ * `@mnemora/testkit` の決定的な擬似実装（`DeterministicLLMProvider` /
  * `DeterministicEmbeddingProvider`）である。本物の OpenAI を CI から叩くことはできない
  * （API キーが無い）ため、このテストが検査しているのは「runtime → MemoryStore →
  * VectorStore → outbox という配線が実際の Postgres に対して正しく動くか」であり、

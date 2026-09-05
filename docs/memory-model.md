@@ -1,6 +1,6 @@
 # Memory Model
 
-本書は mnemo の記憶データモデルを定義する。対象は
+本書は mnemora の記憶データモデルを定義する。対象は
 **「6. DB schema 案」**と**「7. Memory lifecycle」**であり、そこへ到達するために必要な
 Observation / Provenance / Digest / 矛盾 / 強化 / 忘却 / taxonomy / 監査ログの各決定を先に固める。
 
@@ -16,7 +16,7 @@ Phase と同じである。
 ## 1. Memory とは何か / Observation との違い
 
 - **Observation** — 外から入ってきた出来事の生の記録。**不変。解釈しない。**
-  発話・イベント・使用報告・投入文書など、mnemo の外側で起きたことをそのまま保持する。
+  発話・イベント・使用報告・投入文書など、mnemora の外側で起きたことをそのまま保持する。
   Observation は一度書かれたら内容を書き換えない。訂正は新しい Observation として追加される。
 - **Memory** — Observation から抽出された、再利用可能な単位の記憶。**解釈済み。**
   誰が・何を・いつ言ったかではなく、「何が真だとみなせるか」を表す。
@@ -34,7 +34,7 @@ Memory の作成後も無傷で残っている場合だけである。Memory だ
 
 Observation の中には、Memory を生まないものもある。`observe(ctx, { kind: 'memory_usage', ... })`
 （後述 §6）は「どの Memory が実際に使われたか」の報告であり、これは抽出器を通らず
-`recall_usages` へ直接反映される。Observation は「mnemo の外で起きたことの記録」という
+`recall_usages` へ直接反映される。Observation は「mnemora の外で起きたことの記録」という
 共通の型を持つが、そこから先の処理は `kind` によって分岐する。
 
 ---
@@ -83,7 +83,7 @@ Memory は目的の異なる複数の時刻を持つ。これを一つの「時�
 | 列 | 意味 | NULL 許容 | Phase |
 |---|---|---|---|
 | `occurred_at` | その出来事・事実がいつのものか | 可（不明なら NULL） | 1 |
-| `recorded_at` | mnemo がいつ知ったか | 不可 | 1 |
+| `recorded_at` | mnemora がいつ知ったか | 不可 | 1 |
 | `last_reinforced_at` | 最後に実際に使われたのはいつか | 可（未強化なら NULL） | 1 |
 | `valid_from` / `valid_until` | その事実がいつからいつまで真か | 可 | 2 |
 
@@ -109,15 +109,15 @@ literal に書いた `description` を 200 文字で切るだけの処理であ�
 「（要旨なし）」という固定文言が入る（先頭 N 文字を自動で切り出すフォールバックすら無い）。
 これは「要旨は人間が書く」という前提に立っている。
 
-mnemo はこの前提を採らない。**digest は抽出時に LLM が生成し、NOT NULL にする。** 理由は二つ。
-(a) mnemo の Memory は人間が Markdown を手で編集する運用を前提にしない。抽出パイプラインが
+mnemora はこの前提を採らない。**digest は抽出時に LLM が生成し、NOT NULL にする。** 理由は二つ。
+(a) mnemora の Memory は人間が Markdown を手で編集する運用を前提にしない。抽出パイプラインが
 自動生成した Memory に、人手で要旨を書き足す工程を挟むと、Phase 1 で想定する自動抽出の
 スループットと矛盾する。(b) 目次帯（recall.md 参照）の質は digest の質に直接依存する。
 100万件規模で「（要旨なし）」が並ぶ目次は、目次としての役割を果たさない。
 
 **ただし alteroid の安全弁は採る。** alteroid では frontmatter が壊れている・未知の値である
 場合、分類は必ず `premise`（全文を残す側）に倒れる設計になっている。**曖昧なら厚い側に倒す**
-という思想である。mnemo でも digest 生成が失敗した場合に、Memory を「digest だけの薄い状態」
+という思想である。mnemora でも digest 生成が失敗した場合に、Memory を「digest だけの薄い状態」
 に落とすことはしない。NOT NULL 制約を満たしつつこの思想を反映するため、`digest_source` 列を
 持たせる。
 
@@ -169,7 +169,7 @@ digest の生成方式がどちらであったかを隠さないのは同じ原�
 
 ### ここで一度立ち止まって正直に書く
 
-この因果——「訂正の積み上げによって実害が出た。だから mnemo は置換方針を採る」——は、
+この因果——「訂正の積み上げによって実害が出た。だから mnemora は置換方針を採る」——は、
 **alteroid のコードにもドキュメントにも記録が見つかっていない。** 現物（github.com/takecchi/alteroid）
 で確認できたのは次の3点だけである。
 
@@ -181,9 +181,9 @@ digest の生成方式がどちらであったかを隠さないのは同じ原�
 クローン自身がこの問題を実際に経験した可能性を否定するものではない——経験はリポジトリに
 残らない性質のものである。しかし、**「alteroid で検証された結論」として今回の設計の根拠に
 据えることはできない。** 以下の決定は alteroid の実地検証結果ではなく、問題設定から演繹した
-mnemo 独自の設計判断として書く。
+mnemora 独自の設計判断として書く。
 
-### mnemo の決定: 順序では解かない
+### mnemora の決定: 順序では解かない
 
 「新しい方を上に出す」という順位付けの発想そのものを採らない。理由は単純で、**順位付けは
 負荷が上がると崩れるが、フィルタは崩れない。** スコアリングにパラメータを足すたびに、
@@ -248,7 +248,7 @@ scoping する設計に留める。
 
 使用報告は `observe(ctx, { kind: 'memory_usage', recallId, usedMemoryIds })` で受ける
 （§4 API 表面）。これは at-least-once（同じ報告が複数回届き得る）を前提にする必要がある。
-カウンタを直接インクリメントする実装は、再送のたびに二重計上する。そのため mnemo は
+カウンタを直接インクリメントする実装は、再送のたびに二重計上する。そのため mnemora は
 インクリメントではなく**挿入の成否**で冪等性を作る。
 
 ```sql
@@ -456,7 +456,7 @@ interface JournalStore {
 「対象を消す処理」と「journal への `append`」を同一処理内で呼んでおり、削除だけが
 単独で起きて記録が残らない、という状態を作れない構造になっている。
 
-mnemo の `EventStore` interface（`packages/core` が定義し `packages/postgres` が実装する）も
+mnemora の `EventStore` interface（`packages/core` が定義し `packages/postgres` が実装する）も
 同じ形にする。**`append` / `list` / `get` のみを持ち、`update` / `delete` を持たせない。**
 
 ### スキーマ
@@ -495,11 +495,11 @@ CREATE INDEX idx_memory_events_by_kind   ON memory_events (tenant_id, kind, at);
 リポジトリ層を経由しない削除経路（例えば `packages/postgres` から直接 `memories` を
 UPDATE するようなショートカット）を作らない。
 
-### 保持方針（alteroid に無く、mnemo に要るもの）
+### 保持方針（alteroid に無く、mnemora に要るもの）
 
 alteroid の日誌は無期限に積む設計であり、保持期間・ローテーション・上限を持たない。
 single-tenant・小規模データを前提にすれば成立するが、multi-tenant で桁違いの量を扱う
-mnemo ではこの前提が成立しない。
+mnemora ではこの前提が成立しない。
 
 ⟹ テナント単位で保持期間を設定可能にする。既定は無期限（`NULL`）。期限切れの
 `memory_events` 行を削除する処理そのものが、**`events_purged` イベントとして記録に残る**
@@ -520,12 +520,12 @@ CREATE TABLE tenant_settings (
 );
 ```
 
-**`tenant_settings` は [ADR 0007](./decisions/0007-tenant-scoping.md) が禁じる「テナントの台帳」ではない。** mnemo はテナントの識別・
+**`tenant_settings` は [ADR 0007](./decisions/0007-tenant-scoping.md) が禁じる「テナントの台帳」ではない。** mnemora はテナントの識別・
 認証・存在確認を行わない——`tenant_id` は呼び出し側が渡す不透明な文字列のままである。
 `tenant_settings` に行が無いテナントは、コード中の定数による既定値で動作する。この表は
 「その `tenant_id` というテナントが存在する」という真実を保持するものではなく、
 既に呼び出し側から渡されている `tenant_id` に対する**任意の運用パラメータ**（保持期間・
-既定 half-life・taxonomy モード）を保持するだけであり、無くても mnemo は動く。
+既定 half-life・taxonomy モード）を保持するだけであり、無くても mnemora は動く。
 
 ### forget() と purge() を分ける
 
@@ -551,7 +551,7 @@ purged_at timestamptz NULL   -- 非NULLなら content/digest はトゥームス�
 ## 10. DB schema 案
 
 以降が本書の中心である。テーブルごとに導入 Phase を明記する。**`tenant_id` は全テーブルで
-NOT NULL とし、全ての一意制約・索引の先頭列に置く**（[ADR 0007](./decisions/0007-tenant-scoping.md)）。これは mnemo の隔離境界が
+NOT NULL とし、全ての一意制約・索引の先頭列に置く**（[ADR 0007](./decisions/0007-tenant-scoping.md)）。これは mnemora の隔離境界が
 アプリケーションコードの慎重さではなく、スキーマの形そのものによって保証されることを
 意味する。
 
@@ -765,7 +765,7 @@ Phase 1 は**稼働中の空間を1つに限る**。2つ目の空間（例えば
 追う設計は Phase 2 の課題として残す（Phase 1 は単一空間なのでこの複雑さは出ない）。
 
 **確かめていないこと**: 可変次元の埋め込み列を Drizzle でどう型付けるかは一次情報が
-見つからなかった。空間ごとのテーブル分割で回避しているため mnemo の設計には影響しないが、
+見つからなかった。空間ごとのテーブル分割で回避しているため mnemora の設計には影響しないが、
 確認できなかった事実として明記する。
 
 ### `memory_relations`（Phase 2）
@@ -925,6 +925,9 @@ transactional outbox パターン（同一トランザクションでジョブ�
 ## 確かめていないこと（本書内で参照した範囲の一覧）
 
 - npm org `mnemo` の取得可否（本書の範囲外だが横断的に未確認のまま）。
+  - **2026-09 追記**: `mnemora` への改名により、この論点は消えた。npm の org `@mnemora` は
+    オーナーが作成し、使用できることを確認している（確認したのはオーナーである）。
+    [ADR 0014](./decisions/0014-package-name-mnemora.md) を参照。
 - マネージド Postgres 各社が実際に提供する pgvector のバージョン。
 - 可変次元の埋め込み列を Drizzle でどう型付けるか（空間ごとのテーブル分割で回避）。
 - 「訂正の積み上げによる実害 → 置換方針」という因果自体の alteroid での検証（§5）。
