@@ -126,6 +126,20 @@ at-least-once が壊れる（DB がコミットされたのにジョブが飛ば
 成果物に含める。運搬役の実装がまだ `InlineScheduler` だけであっても、outbox というテーブルと
 書き込み契約自体は最初から要る。
 
+**実装（roadmap.md 段階3、ADR 0012）**: `packages/core/src/runtime.ts` の
+`createRuntime(deps: RuntimeDeps): Runtime` が `observe(ctx, input)` / `tick(ctx, opts)` を
+実装する。`deps` には `MemoryStore` / `OutboxStore`（§5.11） / `VectorStore` / `EventStore` /
+`TenantSettingsStore`（§5.12） / `LLMProvider` / `EmbeddingProvider` に加え、`hashContent`
+（D16、`contentHash` の計算関数）を注入する——core は zod 以外の実行時依存を持てない
+（§3.6）ため、`node:crypto` を要求する SHA-256 計算そのものは runtime に置かず、
+呼び出し側（`packages/postgres` の `sha256Hex`）が注入する。`embed` ジョブは
+`extract: 'sync'` の経路でも常に outbox 経由（非同期）のままである
+（[docs/memory-model.md](./memory-model.md) §11 の lifecycle 表・行3）。抽出そのものは
+`extraction.ts`（`extractCandidates` / `buildNewMemoryFromCandidate`）が担い、
+LLM 呼び出し自体が失敗した場合は Observation の全文を1件の `stated` Memory として残す
+安全弁を持つ（ADR 0012 D-ingest-4、[docs/memory-model.md](./memory-model.md) §4 の
+digest 安全弁と対になる）。
+
 ### 3.5 冪等
 
 再送・二重配信は前提として設計する。**カウンタの盲目的インクリメントを設計原則として禁止する。**
@@ -275,7 +289,18 @@ interface Ctx {
 ```ts
 interface MemoryStore {
   createObservation(ctx: Ctx, input: NewObservation): Promise<Observation>;
+  getObservation(ctx: Ctx, id: ObservationId): Promise<Observation | null>;
+  createObservationWithOutbox(
+    ctx: Ctx,
+    input: NewObservation,
+    jobKinds: OutboxJobKind[]
+  ): Promise<{ observation: Observation; created: boolean; jobs: OutboxJobRecord[] }>;
   createMemory(ctx: Ctx, input: NewMemory): Promise<Memory>;
+  createMemoryWithOutbox(
+    ctx: Ctx,
+    input: NewMemory,
+    jobKinds: OutboxJobKind[]
+  ): Promise<{ memory: Memory; created: boolean; jobs: OutboxJobRecord[] }>;
   get(ctx: Ctx, id: MemoryId): Promise<Memory | null>;
   getMany(ctx: Ctx, ids: MemoryId[]): Promise<Memory[]>;
   updateStatus(
@@ -284,6 +309,7 @@ interface MemoryStore {
     status: MemoryStatus,
     opts?: { supersededById?: MemoryId }
   ): Promise<Memory>;
+  setEmbeddingStatus(ctx: Ctx, id: MemoryId, status: EmbeddingStatus): Promise<Memory>;
   reinforce(ctx: Ctx, id: MemoryId, at: Date): Promise<Memory>;
   recordUsage(
     ctx: Ctx,
@@ -295,6 +321,14 @@ interface MemoryStore {
 
 type MemoryStatus = 'active' | 'superseded' | 'contested' | 'archived' | 'forgotten';
 ```
+
+> **roadmap.md 段階3（2026-09 追記、ADR 0012 D-ingest-1）**: `getObservation` /
+> `createObservationWithOutbox` / `createMemoryWithOutbox` / `setEmbeddingStatus` を
+> 足した。前2つは transactional outbox（§3.4）——Observation/Memory の作成と outbox への
+> ジョブ書き込みを同一トランザクションで行い、新規作成時（`created: true`）だけジョブを
+> 積む。`setEmbeddingStatus` は `embeddingStatus` の `pending → ready | failed` 遷移を書く。
+> なぜ独立した「トランザクションハンドル」の抽象にしなかったかは ADR 0012 D-ingest-1 を
+> 参照。
 
 > **D9（2026-09 追記）**: `getMany` と `recordUsage` を足した。
 >
@@ -516,7 +550,50 @@ interface Clock {
   注入できるようにするための境界。alteroid・オーナー案のどちらにも無いが、multi-tenant・複数
   インスタンスで動く mnemo では時刻取得を暗黙に `new Date()` へ散らさないための最小限の追加である。
 
-### 5.11 Sensor / SpeechPolicy — Phase 3、形のみ
+### 5.11 OutboxStore — Phase 1（roadmap.md 段階3で追加、ADR 0012 D-ingest-2）
+
+```ts
+interface ClaimOutboxJobsOptions {
+  kinds?: OutboxJobKind[];
+  limit: number;
+  now: Date;
+  claimedBy: string;
+}
+
+interface OutboxStore {
+  claimBatch(ctx: Ctx, opts: ClaimOutboxJobsOptions): Promise<OutboxJobRecord[]>;
+  complete(ctx: Ctx, jobId: string): Promise<void>;
+  fail(ctx: Ctx, jobId: string, error: string): Promise<void>;
+}
+```
+
+`MemoryStore.createObservationWithOutbox` / `createMemoryWithOutbox`（§5.1）が
+transactional outbox の「書く」側だとすれば、`OutboxStore` は `runtime.tick()`（§3.3）が
+使う「読んで処理する」側である。
+
+契約:
+- `claimBatch` は `completed_at IS NULL AND failed_at IS NULL AND available_at <= now`
+  のジョブだけを返す。複数ワーカーが同時に呼んでも同じジョブを二重に claim しない
+  （`packages/postgres` は `FOR UPDATE SKIP LOCKED` で実装する）。
+- `complete` / `fail` は対象が存在しない・形式が不正な id でも例外を投げない
+  （べき等な終端更新）。
+- Phase 1 は失敗したジョブを自動リトライしない（ADR 0012 D-ingest-2）。
+
+### 5.12 TenantSettingsStore — Phase 1（roadmap.md 段階3で追加、ADR 0012 D-ingest-3）
+
+```ts
+interface TenantSettingsStore {
+  getDefaultHalfLifeHours(ctx: Ctx): Promise<number>;
+}
+```
+
+契約:
+- テナントに `tenant_settings` 行が無い場合は `DEFAULT_HALF_LIFE_HOURS`（720、DB 側の
+  `default_half_life_hours DEFAULT 720` と同じ値）を返す（エラーにしない）。
+- `tenant_settings` の他の列（`event_retention_days`・`taxonomy_mode`）の読み書きは
+  この interface の範囲外（ADR 0012 D-ingest-3）。
+
+### 5.13 Sensor / SpeechPolicy — Phase 3、形のみ
 
 ```ts
 interface Sensor {
@@ -537,6 +614,17 @@ interface SpeechPolicy {
 
 ## 確かめていないこと（この doc に関わる範囲）
 
-- 抽出の既定を `sync` にするか `deferred` にするか（§3.3）はオーナー判断が必要で、まだ決まっていない。
+- ~~抽出の既定を `sync` にするか `deferred` にするか（§3.3）はオーナー判断が必要で、
+  まだ決まっていない。~~ **2026-09 追記（roadmap.md 段階3、D2）**: 既定は `sync` に決定・
+  実装済み（`runtime.ts` の `extractMode = input.extract ?? "sync"`）。
 - `packages/testkit` が実際にどこまでの振る舞い（順序・並行性）を検査できるかは、testkit 自体の
   設計（Phase 1 着手時）に委ねられており、この doc の時点では契約として書けるが実装されていない。
+  **2026-09 追記**: `MemoryStore`/`VectorStore`/`EventStore`/`OutboxStore`/
+  `TenantSettingsStore` の適合テストは実装済み（`packages/testkit`）。順序・並行性のうち
+  `OutboxStore.claimBatch` の同時 claim 安全性（`FOR UPDATE SKIP LOCKED`）は
+  `packages/postgres` 側で実装したが、複数ワーカーが実際に競合する状況を再現するテストは
+  Phase 1 の時点では書いていない（単一プロセス内の逐次呼び出ししか検査していない）。
+- **2026-09 追記（roadmap.md 段階3）**: `packages/openai` の `completeStructured` が
+  OpenAI の strict モードで実際に「省略可能なフィールドを `null` として返す」という
+  前提（ADR 0012 D-ingest-7）は、`OPENAI_API_KEY` が無い開発・CI 環境では検証できていない。
+  `packages/openai/src/__tests__/live.openai.test.ts` は鍵がある場合のみ実行される。
