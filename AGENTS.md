@@ -33,9 +33,24 @@
 
 ## いまの状態
 
-**設計フェーズ。コードはまだ1行も無い。**
+**Phase 1（MVP）の実装が一巡した。**`docs/roadmap.md` §2 の段階1〜7 がすべて着地している。
 
-`docs/` に設計、`docs/decisions/` に ADR がある。**設計が承認されてから Phase 1 の実装に入る。**
+| package | 中身 |
+|---|---|
+| `packages/core` | 型・interface・`runtime.observe/tick/recall`・純関数の戦略。実行時依存は zod だけ（機械的に検査している） |
+| `packages/testkit` | adapter の適合テスト一式（conformance suite）とインメモリのプレースホルダ実装 |
+| `packages/postgres` | `MemoryStore` / `VectorStore` / `EventStore` / `OutboxStore` / `TenantSettingsStore`。手書きマイグレーション |
+| `packages/openai` | `EmbeddingProvider` / `LLMProvider` |
+| `examples/chat` | サンプル CLI と、**naive（会話ログ全部）と mnemo を実測比較する `compare`** |
+
+**Phase 1 に入っていないもの**は `docs/roadmap.md` §1.3 の通り（関係グラフ本体・reranking・
+`reflect()` の実運用・`packages/bullmq`・HTTP server）。
+
+**テストは本物の Postgres + pgvector に対して走る。**`packages/postgres` と `examples/chat` の
+検査は `DATABASE_URL` が無いと失敗する——**擬似物へ黙ってフォールバックしない。**
+ただし LLM と埋め込みは CI に API キーが無いため決定的な擬似 provider を使う
+（`OPENAI_API_KEY` があれば本物に切り替わる）。この非対称は
+[examples/chat/README.md](./examples/chat/README.md) に明記してある。
 
 ---
 

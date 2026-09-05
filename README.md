@@ -56,7 +56,11 @@ await brain.forget()
 
 ## いまの状態
 
-**設計フェーズ。実装コードはまだ無い。**
+**Phase 1（MVP）の実装が一巡した。**`packages/core`（型・interface・runtime）、`packages/postgres`、
+`packages/openai`、`packages/testkit`（適合テスト）、`examples/chat`（サンプル CLI）がある。
+Phase 1 の範囲と、そこに入れなかったものは [docs/roadmap.md](./docs/roadmap.md) を参照。
+
+**まだ 0.x であり、公開 API は動く。**名前（`mnemo` / `@mnemo/*`）も暫定のままである。
 
 | 文書 | 何が書いてあるか |
 |---|---|

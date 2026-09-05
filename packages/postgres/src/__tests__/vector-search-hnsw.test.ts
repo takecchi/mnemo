@@ -10,6 +10,7 @@ import {
   getTestClient,
   resetTestDatabase,
   TEST_EMBEDDING_SPACE,
+  seededRandom,
 } from "./test-db.js";
 
 const TABLE = embeddingSpaceTableName(TEST_EMBEDDING_SPACE);
@@ -34,12 +35,13 @@ async function seed(
   ctx: Ctx,
   pool: Pool,
 ) {
+  const rand = seededRandom(20260905);
   for (let i = 0; i < ROW_COUNT; i += 1) {
     const memory = await memoryStore.createMemory(
       ctx,
       buildNewMemoryFixture({ tenantId: ctx.tenantId }),
     );
-    const vector = [Math.random(), Math.random(), Math.random()];
+    const vector = [rand(), rand(), rand()];
     await vectorStore.upsert(ctx, TEST_EMBEDDING_SPACE, memory.id, vector);
   }
   // 統計情報が無い/古いままだと、プランナが誤った行数見積もりで意図しない索引を選ぶ

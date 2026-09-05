@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mnemo/core": ["../../packages/core/src/index.ts"],
+      "@mnemo/openai": ["../../packages/openai/src/index.ts"],
+      "@mnemo/postgres": ["../../packages/postgres/src/index.ts"],
+      "@mnemo/testkit": ["../../packages/testkit/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

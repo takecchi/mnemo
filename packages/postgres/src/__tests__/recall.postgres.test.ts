@@ -10,6 +10,7 @@ import {
   getTestClient,
   resetTestDatabase,
   TEST_EMBEDDING_SPACE,
+  seededRandom,
 } from "./test-db.js";
 
 /**
@@ -112,13 +113,10 @@ describe("runtime.recall() — 本物の Postgres + pgvector（roadmap.md 段階
     const { pool } = await getTestClient();
     const { runtime, memoryStore, vectorStore } = await buildTestRuntime();
     const ctx: Ctx = { tenantId: TENANT };
+    const rand = seededRandom(20260905);
 
     for (let i = 0; i < 3000; i += 1) {
-      await createEmbeddedMemory(memoryStore, vectorStore, ctx, [
-        Math.random(),
-        Math.random(),
-        Math.random(),
-      ]);
+      await createEmbeddedMemory(memoryStore, vectorStore, ctx, [rand(), rand(), rand()]);
     }
     await pool.query(`ANALYZE ${TABLE}`);
     await pool.query("ANALYZE memories");

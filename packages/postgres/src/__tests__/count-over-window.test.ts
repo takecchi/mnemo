@@ -10,6 +10,7 @@ import {
   getTestClient,
   resetTestDatabase,
   TEST_EMBEDDING_SPACE,
+  seededRandom,
 } from "./test-db.js";
 
 /**
@@ -39,16 +40,13 @@ async function seed(
   count: number,
   pool: Pool,
 ) {
+  const rand = seededRandom(20260905);
   for (let i = 0; i < count; i += 1) {
     const memory = await memoryStore.createMemory(
       ctx,
       buildNewMemoryFixture({ tenantId: ctx.tenantId }),
     );
-    await vectorStore.upsert(ctx, TEST_EMBEDDING_SPACE, memory.id, [
-      Math.random(),
-      Math.random(),
-      Math.random(),
-    ]);
+    await vectorStore.upsert(ctx, TEST_EMBEDDING_SPACE, memory.id, [rand(), rand(), rand()]);
   }
   // 統計情報が無いと、プランナが誤った行数見積もりで意図しない索引を選んでしまう。
   await pool.query(`ANALYZE ${TABLE}`);
