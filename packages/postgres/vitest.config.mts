@@ -13,8 +13,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@mnemo/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
-      "@mnemo/testkit": fileURLToPath(new URL("../testkit/src/index.ts", import.meta.url)),
+      "@mnemora/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
+      "@mnemora/testkit": fileURLToPath(new URL("../testkit/src/index.ts", import.meta.url)),
     },
   },
 });

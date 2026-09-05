@@ -1,5 +1,5 @@
 {
-  "name": "mnemo",
+  "name": "mnemora",
   "private": true,
   "version": "0.0.0",
   "description": "既存の LLM アプリケーションの下に敷く認知レイヤー（monorepo root）",

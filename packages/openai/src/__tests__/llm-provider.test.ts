@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { Ctx } from "@mnemo/core";
+import type { Ctx } from "@mnemora/core";
 import { OpenAILLMProvider } from "../llm-provider.js";
 
 /**

@@ -6,7 +6,7 @@ import { z } from "zod";
  * `tenantId` は隔離境界（安全性の単位）、`subjectId` はテナント内の整理の単位。
  * この非対称性を混同しない（docs/vision.md 「Tenant と Subject を混同しない」）。
  *
- * mnemo はテナントの台帳を持たない。`tenantId` は呼び出し側が渡す不透明な文字列であり、
+ * mnemora はテナントの台帳を持たない。`tenantId` は呼び出し側が渡す不透明な文字列であり、
  * 存在確認・認証は行わない（docs/architecture.md §3.7）。
  */
 export interface Ctx {

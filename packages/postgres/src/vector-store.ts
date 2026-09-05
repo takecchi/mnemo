@@ -6,7 +6,7 @@ import type {
   VectorFilter,
   VectorHit,
   VectorStore,
-} from "@mnemo/core";
+} from "@mnemora/core";
 import type { Db } from "./client.js";
 import { assertSafeIdentifier, embeddingSpaceTableName } from "./embedding-space-table.js";
 

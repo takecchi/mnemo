@@ -1,17 +1,17 @@
-import { heuristicTokenCounter } from "@mnemo/core";
-import type { Ctx, Runtime } from "@mnemo/core";
+import { heuristicTokenCounter } from "@mnemora/core";
+import type { Ctx, Runtime } from "@mnemora/core";
 import { buildConversation } from "./scenario.js";
 import { measureNaive } from "./naive-path.js";
-import { runMnemoPath } from "./mnemo-path.js";
+import { runMnemoraPath } from "./mnemora-path.js";
 
 export interface ComparisonRow {
   fillerPairs: number;
   turnCount: number;
   naiveChars: number;
   naiveTokens: number;
-  mnemoChars: number;
-  mnemoTokens: number;
-  mnemoShareOfNaiveChars: number;
+  mnemoraChars: number;
+  mnemoraTokens: number;
+  mnemoraShareOfNaiveChars: number;
   omittedKinds: string[];
   /** そのテナントのスコープ内総数（`recall().index.totalInScope`）。テナント分離の検査に使う。 */
   totalInScope: number;
@@ -25,7 +25,7 @@ export interface CompareOptions {
 }
 
 /**
- * 会話の長さを変えて、経路A（naive）・経路B（mnemo）が実際に焼く量を測る
+ * 会話の長さを変えて、経路A（naive）・経路B（mnemora）が実際に焼く量を測る
  * （PR 本文「量の比較」。docs/roadmap.md §4「計測と抑止を混同しない」を踏まえ、
  * ここでは budget を渡さない——「切り詰めずに、そのままだと何文字になるか」を見る）。
  *
@@ -44,15 +44,15 @@ export async function runComparison(
     const ctx: Ctx = { tenantId: `${tenantPrefix}-${fillerPairs}` };
     const conversation = buildConversation(fillerPairs);
     const naive = measureNaive(conversation, heuristicTokenCounter);
-    const { recall } = await runMnemoPath(runtime, ctx, conversation);
+    const { recall } = await runMnemoraPath(runtime, ctx, conversation);
     rows.push({
       fillerPairs,
       turnCount: conversation.turns.length,
       naiveChars: naive.chars,
       naiveTokens: naive.estimatedTokens,
-      mnemoChars: recall.usage.chars,
-      mnemoTokens: recall.usage.estimatedTokens,
-      mnemoShareOfNaiveChars: recall.usage.chars / naive.chars,
+      mnemoraChars: recall.usage.chars,
+      mnemoraTokens: recall.usage.estimatedTokens,
+      mnemoraShareOfNaiveChars: recall.usage.chars / naive.chars,
       omittedKinds: recall.omitted.map((o) => o.kind),
       totalInScope: recall.index.totalInScope,
     });
@@ -62,11 +62,11 @@ export async function runComparison(
 
 export function formatComparisonTable(rows: ComparisonRow[]): string {
   const header =
-    "| 会話ターン数 | naive chars | naive tokens(概算) | mnemo chars | mnemo tokens(概算) | mnemo/naive (chars) |";
+    "| 会話ターン数 | naive chars | naive tokens(概算) | mnemora chars | mnemora tokens(概算) | mnemora/naive (chars) |";
   const sep = "|---|---|---|---|---|---|";
   const body = rows.map((r) => {
-    const ratio = `${(r.mnemoShareOfNaiveChars * 100).toFixed(1)}%`;
-    return `| ${r.turnCount} | ${r.naiveChars} | ${r.naiveTokens} | ${r.mnemoChars} | ${r.mnemoTokens} | ${ratio} |`;
+    const ratio = `${(r.mnemoraShareOfNaiveChars * 100).toFixed(1)}%`;
+    return `| ${r.turnCount} | ${r.naiveChars} | ${r.naiveTokens} | ${r.mnemoraChars} | ${r.mnemoraTokens} | ${ratio} |`;
   });
   return [header, sep, ...body].join("\n");
 }

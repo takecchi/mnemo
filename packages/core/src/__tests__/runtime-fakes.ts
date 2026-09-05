@@ -20,7 +20,7 @@ import { defaultDecayStrategy } from "../strategies/decay.js";
 /**
  * `packages/core` 自身の runtime テスト用フェイク一式。
  *
- * **`@mnemo/testkit` を import しない。** core は誰にも依存されるが誰にも依存しない
+ * **`@mnemora/testkit` を import しない。** core は誰にも依存されるが誰にも依存しない
  * （docs/architecture.md §4）——`testkit` は `core` に依存するパッケージであり、逆方向の
  * 依存を core のテストからも作らない。ここでのフェイクは testkit の in-memory 実装と
  * 似ているが意図的に独立している（1つを直せばもう1つが壊れる、という結合を作らない）。
@@ -398,7 +398,7 @@ function cosineDistance(a: number[], b: number[]): number {
 }
 
 /**
- * `FakeVectorStore` は `packages/core` 自身のテスト用であり `@mnemo/testkit` に依存しない
+ * `FakeVectorStore` は `packages/core` 自身のテスト用であり `@mnemora/testkit` に依存しない
  * （このファイル冒頭のコメント参照）。recall のテストが意味のある結果を得られるよう、
  * `upsert` されたベクトルに対して実際に cosine 距離で ANN を模する
  * （`FakeBackingStore.memories` を参照して `status` フィルタも本物同様に適用する）。

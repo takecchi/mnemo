@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ObservationId } from "./ids.js";
 
 /**
- * mnemo の外で起きたことの生の記録（docs/memory-model.md §1・§10）。
+ * mnemora の外で起きたことの生の記録（docs/memory-model.md §1・§10）。
  *
  * `kind` はあえて閉じたユニオンにしない（DB 側も CHECK 制約を付けない）。
  * 新しい観測の種類を追加するたびにマイグレーションを要求しない設計のため。

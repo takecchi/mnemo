@@ -1,8 +1,8 @@
 import type { Pool } from "pg";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import type { Ctx, MemoryStatus } from "@mnemo/core";
-import { defaultDecayStrategy } from "@mnemo/core";
-import { buildNewMemoryFixture } from "@mnemo/testkit";
+import type { Ctx, MemoryStatus } from "@mnemora/core";
+import { defaultDecayStrategy } from "@mnemora/core";
+import { buildNewMemoryFixture } from "@mnemora/testkit";
 import { PostgresMemoryStore } from "../memory-store.js";
 import { closeTestClient, getTestClient, resetTestDatabase } from "./test-db.js";
 

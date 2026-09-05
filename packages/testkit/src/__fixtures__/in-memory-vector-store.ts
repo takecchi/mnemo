@@ -5,7 +5,7 @@ import type {
   VectorFilter,
   VectorHit,
   VectorStore,
-} from "@mnemo/core";
+} from "@mnemora/core";
 
 interface Entry {
   tenantId: string;

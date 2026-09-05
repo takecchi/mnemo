@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { Ctx, EmbeddingProvider, EmbeddingSpaceId } from "@mnemo/core";
+import type { Ctx, EmbeddingProvider, EmbeddingSpaceId } from "@mnemora/core";
 
 /**
  * `packages/openai` の `EmbeddingProvider` 実装（docs/architecture.md §5.5）。

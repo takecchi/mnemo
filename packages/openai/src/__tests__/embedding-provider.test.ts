@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Ctx } from "@mnemo/core";
+import type { Ctx } from "@mnemora/core";
 import { OpenAIEmbeddingProvider } from "../embedding-provider.js";
 
 /**

@@ -4,7 +4,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@mnemo/core": ["../core/src/index.ts"]
+      "@mnemora/core": ["../core/src/index.ts"]
     }
   },
   "include": ["src"]

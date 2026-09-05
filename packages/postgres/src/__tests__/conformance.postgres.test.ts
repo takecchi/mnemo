@@ -1,14 +1,14 @@
 import { afterAll } from "vitest";
 import { sql } from "drizzle-orm";
-import type { Ctx } from "@mnemo/core";
+import type { Ctx } from "@mnemora/core";
 import {
   describeEventStoreConformance,
   describeMemoryStoreConformance,
   describeOutboxStoreConformance,
   describeTenantSettingsStoreConformance,
   describeVectorStoreConformance,
-} from "@mnemo/testkit";
-import { buildNewMemoryFixture } from "@mnemo/testkit";
+} from "@mnemora/testkit";
+import { buildNewMemoryFixture } from "@mnemora/testkit";
 import { PostgresMemoryStore } from "../memory-store.js";
 import { PostgresVectorStore } from "../vector-store.js";
 import { PostgresEventStore } from "../event-store.js";

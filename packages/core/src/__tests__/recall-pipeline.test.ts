@@ -15,7 +15,7 @@ import { createFakeRuntimeStores } from "./runtime-fakes.js";
  * - 被覆不変条件（groups の総和 == totalInScope）。
  * - explain.stages が実際に走った/走らなかった段を反映すること。
  *
- * `@mnemo/testkit` には依存しない（`runtime-fakes.ts` 冒頭のコメントと同じ理由）。
+ * `@mnemora/testkit` には依存しない（`runtime-fakes.ts` 冒頭のコメントと同じ理由）。
  */
 
 const ctx: Ctx = { tenantId: "tenant-1" };

@@ -5,7 +5,7 @@ import type {
   EventStore,
   MemoryEvent,
   NewMemoryEvent,
-} from "@mnemo/core";
+} from "@mnemora/core";
 import { nextId } from "./id.js";
 
 /**

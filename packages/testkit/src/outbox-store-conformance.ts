@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Ctx, OutboxJobKind, OutboxJobRecord, OutboxStore } from "@mnemo/core";
+import type { Ctx, OutboxJobKind, OutboxJobRecord, OutboxStore } from "@mnemora/core";
 
 export interface SeedOutboxJobInput {
   kind: OutboxJobKind;

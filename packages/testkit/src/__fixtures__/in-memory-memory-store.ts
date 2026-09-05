@@ -1,5 +1,5 @@
-import { defaultDecayStrategy } from "@mnemo/core";
-import type { NotIndexedReason } from "@mnemo/core";
+import { defaultDecayStrategy } from "@mnemora/core";
+import type { NotIndexedReason } from "@mnemora/core";
 import type {
   Ctx,
   EmbeddingStatus,
@@ -17,7 +17,7 @@ import type {
   RecallId,
   RecallScope,
   ScopeAggregate,
-} from "@mnemo/core";
+} from "@mnemora/core";
 import { nextId } from "./id.js";
 
 /**

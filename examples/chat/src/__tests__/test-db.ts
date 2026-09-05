@@ -4,7 +4,7 @@ import {
   embeddingSpaceTableName,
   registerEmbeddingSpace,
   runMigrations,
-} from "@mnemo/postgres";
+} from "@mnemora/postgres";
 import { DETERMINISTIC_EMBEDDING_SPACE } from "../providers.js";
 
 /**

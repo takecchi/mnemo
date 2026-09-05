@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { heuristicTokenCounter } from "@mnemo/core";
+import { heuristicTokenCounter } from "@mnemora/core";
 import { formatComparisonTable, runComparison } from "./compare.js";
 import { formatRecall } from "./format.js";
-import { buildMnemoPrompt, ingestConversation, queryRecall } from "./mnemo-path.js";
+import { buildMnemoraPrompt, ingestConversation, queryRecall } from "./mnemora-path.js";
 import { measureNaive, naivePrompt } from "./naive-path.js";
 import { createExampleRuntime } from "./runtime-factory.js";
 import { buildConversation } from "./scenario.js";
@@ -18,7 +18,7 @@ function requireDatabaseUrl(): string {
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error(
-      "DATABASE_URL が設定されていません。mnemo は Postgres + pgvector を要求する " +
+      "DATABASE_URL が設定されていません。mnemora は Postgres + pgvector を要求する " +
         "（docs/roadmap.md 段階2）。examples/chat/README.md の手順でローカル DB を用意し、" +
         "DATABASE_URL を設定してから実行すること。",
     );
@@ -33,7 +33,7 @@ function printProviderMode(mode: "openai" | "deterministic"): void {
     );
   } else {
     console.log(
-      "[provider] OPENAI_API_KEY が無いため、@mnemo/testkit の決定的な擬似 provider で動いています。" +
+      "[provider] OPENAI_API_KEY が無いため、@mnemora/testkit の決定的な擬似 provider で動いています。" +
         "擬似 embedding は意味的な類似度を表現しないため、このモードでは recall の関連度そのものは" +
         "評価できない（examples/chat/README.md「正直に書くべき限界」参照）。",
     );
@@ -60,7 +60,7 @@ async function runChat(): Promise<void> {
       `naive usage: chars=${naive.chars} estimatedTokens=${naive.estimatedTokens} (counter=${naive.counter})`,
     );
 
-    console.log("\n=== 経路B（mnemo）: observe() → tick() ===");
+    console.log("\n=== 経路B（mnemora）: observe() → tick() ===");
     await ingestConversation(handle.runtime, ctx, conversation);
     console.log(
       `${conversation.userUtterances.length} 件の user 発話を observe() し、tick() で embed を処理した。`,
@@ -70,7 +70,7 @@ async function runChat(): Promise<void> {
     const withoutBudget = await queryRecall(handle.runtime, ctx, conversation);
     console.log(formatRecall(withoutBudget, "budget 無し"));
     console.log("呼び出し側がプロンプトへ積む文字列（recall() の返り値だけから組み立てる例）:");
-    console.log(buildMnemoPrompt(withoutBudget));
+    console.log(buildMnemoraPrompt(withoutBudget));
 
     console.log(
       `\n=== budget を渡すと実際に切り詰められる（maxMemoryChars=${TINY_BUDGET_CHARS}） ===`,
@@ -82,8 +82,8 @@ async function runChat(): Promise<void> {
 
     console.log("\n=== まとめ ===");
     console.log(`naive chars                  : ${naive.chars}`);
-    console.log(`mnemo chars (budget 無し)      : ${withoutBudget.usage.chars}`);
-    console.log(`mnemo chars (budget あり)      : ${withBudget.usage.chars}`);
+    console.log(`mnemora chars (budget 無し)      : ${withoutBudget.usage.chars}`);
+    console.log(`mnemora chars (budget あり)      : ${withBudget.usage.chars}`);
     console.log(
       "budget_dropped omission (budget あり):",
       withBudget.omitted.find((o) => o.kind === "budget_dropped") ?? "(発生しなかった)",
@@ -98,14 +98,14 @@ async function runCompare(): Promise<void> {
   printProviderMode(handle.mode);
   try {
     console.log(
-      "\n会話の長さを変えて、経路A（naive）と経路B（mnemo, budget 無し）の焼かれる量を測る。\n",
+      "\n会話の長さを変えて、経路A（naive）と経路B（mnemora, budget 無し）の焼かれる量を測る。\n",
     );
     const rows = await runComparison(handle.runtime, {
       fillerPairsSequence: DEFAULT_COMPARE_SEQUENCE,
     });
     console.log(formatComparisonTable(rows));
     console.log(
-      "\n(注) mnemo chars は recall() の budget 無し usage.chars。切り詰めていない、そのままの量。",
+      "\n(注) mnemora chars は recall() の budget 無し usage.chars。切り詰めていない、そのままの量。",
     );
   } finally {
     await handle.close();
@@ -116,8 +116,8 @@ function printHelp(): void {
   console.log(
     [
       "使い方:",
-      "  DATABASE_URL=... pnpm --filter @mnemo/example-chat run chat     # observe/recall の往復・omitted/usage/budget を実演",
-      "  DATABASE_URL=... pnpm --filter @mnemo/example-chat run compare  # 会話の長さを変えて経路A/経路Bの量を実測",
+      "  DATABASE_URL=... pnpm --filter @mnemora/example-chat run chat     # observe/recall の往復・omitted/usage/budget を実演",
+      "  DATABASE_URL=... pnpm --filter @mnemora/example-chat run compare  # 会話の長さを変えて経路A/経路Bの量を実測",
     ].join("\n"),
   );
 }

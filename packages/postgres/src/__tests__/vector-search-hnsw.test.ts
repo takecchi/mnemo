@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import type { Ctx } from "@mnemo/core";
-import { buildNewMemoryFixture } from "@mnemo/testkit";
+import type { Ctx } from "@mnemora/core";
+import { buildNewMemoryFixture } from "@mnemora/testkit";
 import { PostgresMemoryStore } from "../memory-store.js";
 import { PostgresVectorStore } from "../vector-store.js";
 import { embeddingSpaceTableName } from "../embedding-space-table.js";

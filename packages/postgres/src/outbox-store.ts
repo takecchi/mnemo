@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { ClaimOutboxJobsOptions, Ctx, OutboxJobRecord, OutboxStore } from "@mnemo/core";
+import type { ClaimOutboxJobsOptions, Ctx, OutboxJobRecord, OutboxStore } from "@mnemora/core";
 import type { Db } from "./client.js";
 import { isUuidLike, rowToOutboxJob, type OutboxJobRow } from "./mapping.js";
 

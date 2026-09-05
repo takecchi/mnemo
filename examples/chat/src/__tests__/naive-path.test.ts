@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heuristicTokenCounter } from "@mnemo/core";
+import { heuristicTokenCounter } from "@mnemora/core";
 import { buildConversation } from "../scenario.js";
 import { measureNaive, naivePrompt } from "../naive-path.js";
 

@@ -4,8 +4,8 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@mnemo/core": ["../core/src/index.ts"],
-      "@mnemo/testkit": ["../testkit/src/index.ts"]
+      "@mnemora/core": ["../core/src/index.ts"],
+      "@mnemora/testkit": ["../testkit/src/index.ts"]
     }
   },
   "include": ["src"]

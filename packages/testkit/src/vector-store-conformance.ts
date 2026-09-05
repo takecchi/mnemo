@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Ctx, EmbeddingSpaceId, MemoryId, VectorStore } from "@mnemo/core";
+import type { Ctx, EmbeddingSpaceId, MemoryId, VectorStore } from "@mnemora/core";
 
 export interface VectorStoreConformanceOptions {
   name: string;

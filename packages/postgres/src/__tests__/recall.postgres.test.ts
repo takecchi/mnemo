@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import type { Ctx, EmbeddingProvider, LLMProvider, MemoryStatus } from "@mnemo/core";
-import { createRuntime } from "@mnemo/core";
-import { buildNewMemoryFixture } from "@mnemo/testkit";
+import type { Ctx, EmbeddingProvider, LLMProvider, MemoryStatus } from "@mnemora/core";
+import { createRuntime } from "@mnemora/core";
+import { buildNewMemoryFixture } from "@mnemora/testkit";
 import { PostgresMemoryStore } from "../memory-store.js";
 import { PostgresVectorStore } from "../vector-store.js";
 import { embeddingSpaceTableName } from "../embedding-space-table.js";

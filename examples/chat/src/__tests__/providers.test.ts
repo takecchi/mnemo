@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { OpenAIEmbeddingProvider, OpenAILLMProvider } from "@mnemo/openai";
-import { DeterministicEmbeddingProvider, DeterministicLLMProvider } from "@mnemo/testkit";
+import { OpenAIEmbeddingProvider, OpenAILLMProvider } from "@mnemora/openai";
+import { DeterministicEmbeddingProvider, DeterministicLLMProvider } from "@mnemora/testkit";
 import { createProviders, selectProviderMode } from "../providers.js";
 
 /**
