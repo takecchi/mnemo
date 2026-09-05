@@ -1,0 +1,25 @@
+{
+  "name": "@mnemo/example-chat",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "roadmap.md 段階7「サンプル」。observe → recall の往復と、経路A（naive）/経路B（mnemo）の焼かれる量の比較を実演する CLI サンプル。",
+  "license": "UNLICENSED",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test:db": "vitest run",
+    "chat": "tsx src/cli.ts chat",
+    "compare": "tsx src/cli.ts compare"
+  },
+  "dependencies": {
+    "@mnemo/core": "workspace:*",
+    "@mnemo/openai": "workspace:*",
+    "@mnemo/postgres": "workspace:*",
+    "@mnemo/testkit": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}
