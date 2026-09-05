@@ -1,8 +1,10 @@
 import type { Ctx } from "../ctx.js";
-import type { MemoryId, RecallId } from "../ids.js";
-import type { Memory, MemoryStatus, NewMemory } from "../memory.js";
+import type { MemoryId, ObservationId, RecallId } from "../ids.js";
+import type { EmbeddingStatus, Memory, MemoryStatus, NewMemory } from "../memory.js";
 import type { NewObservation, Observation } from "../observation.js";
+import type { OutboxJobRecord } from "../outbox.js";
 import type { GroupCount, RecallScope } from "../recall.js";
+import type { OutboxJobKind } from "./scheduler.js";
 
 /**
  * MemoryStore — Phase 1（docs/architecture.md §5.1）。
@@ -28,10 +30,49 @@ import type { GroupCount, RecallScope } from "../recall.js";
  *   （docs/memory-model.md §6）を呼び出し側が知るための戻り値
  *   （`insertedMemoryIds`）を持つ。`reinforce` 単体では「実際に挿入されたか」を
  *   呼び出し側は知れない。
+ *
+ * roadmap.md 段階3（取り込み）で以下4メソッドを追加した（本 PR）:
+ * - `getObservation` — `runtime.tick`（`extract: 'deferred'` の消化・ADR 0005）が
+ *   outbox ジョブの payload から `observationId` だけを受け取り、本文を取り直すために使う。
+ * - `createObservationWithOutbox` / `createMemoryWithOutbox` — transactional outbox
+ *   （docs/architecture.md §3.4）を実現するための書き込み口。`observe()` の DB コミットと
+ *   「抽出/埋め込みジョブを outbox に積む」を同一トランザクションで行うには、
+ *   Observation/Memory の作成そのものにジョブ書き込みを同居させる必要がある
+ *   （PR 本文の「決めたこと」参照）。**新規に行を作成できたとき（`created: true`）だけ
+ *   ジョブを積む**——冪等な再送（`created: false`）でジョブを重複させない。
+ * - `setEmbeddingStatus` — `embeddingStatus` の `pending → ready | failed` 遷移
+ *   （roadmap.md 段階3の完了条件）を書き込む。
  */
 export interface MemoryStore {
   createObservation(ctx: Ctx, input: NewObservation): Promise<Observation>;
+  /** roadmap.md 段階3: outbox ジョブから observationId を渡された側が本文を取り直すための読み出し。 */
+  getObservation(ctx: Ctx, id: ObservationId): Promise<Observation | null>;
+  /**
+   * roadmap.md 段階3: Observation の作成と outbox ジョブ書き込みを同一トランザクションで行う。
+   * `jobKinds` の各要素につき1件のジョブを作る。ジョブの `payload` は
+   * `{ observationId: <作成された Observation の id> }` に固定される（adapter が作成後の
+   * id を使って組み立てる。呼び出し側が id をまだ知らない時点で呼ぶための設計）。
+   * 冪等な再送（`externalId` が既存行と衝突）の場合は `created: false` を返し、
+   * ジョブは一切作らない（`jobs` は空配列）。
+   */
+  createObservationWithOutbox(
+    ctx: Ctx,
+    input: NewObservation,
+    jobKinds: OutboxJobKind[],
+  ): Promise<{ observation: Observation; created: boolean; jobs: OutboxJobRecord[] }>;
   createMemory(ctx: Ctx, input: NewMemory): Promise<Memory>;
+  /**
+   * roadmap.md 段階3: Memory の作成と outbox ジョブ書き込み（主に `embed`）を
+   * 同一トランザクションで行う。`createObservationWithOutbox` と対になる契約。
+   * 抽出の冪等性（`(tenant_id, source_observation_id, extractor_version, content_hash)`）で
+   * 既存行に衝突した場合は `created: false` を返し、ジョブは作らない
+   * （同じ内容に対して埋め込みジョブを重複させない）。
+   */
+  createMemoryWithOutbox(
+    ctx: Ctx,
+    input: NewMemory,
+    jobKinds: OutboxJobKind[],
+  ): Promise<{ memory: Memory; created: boolean; jobs: OutboxJobRecord[] }>;
   get(ctx: Ctx, id: MemoryId): Promise<Memory | null>;
   /** D9: recall 段3の mandatory companion retrieval のための一括取得。 */
   getMany(ctx: Ctx, ids: MemoryId[]): Promise<Memory[]>;
@@ -41,6 +82,8 @@ export interface MemoryStore {
     status: MemoryStatus,
     opts?: { supersededById?: MemoryId },
   ): Promise<Memory>;
+  /** roadmap.md 段階3: `embeddingStatus` の `pending → ready | failed` 遷移を書き込む。 */
+  setEmbeddingStatus(ctx: Ctx, id: MemoryId, status: EmbeddingStatus): Promise<Memory>;
   reinforce(ctx: Ctx, id: MemoryId, at: Date): Promise<Memory>;
   /**
    * D9: 使用報告を記録する。`(recall_id, memory_id)` の挿入が実際に起きたものだけを
