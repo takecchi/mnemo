@@ -246,12 +246,38 @@ export interface ScopeAggregate {
 // 量の計測と予算（docs/recall.md §6）
 // ---------------------------------------------------------------------------
 
+/**
+ * 実際に返した量の計測（docs/recall.md §6）。
+ *
+ * **計測（`usage`）と強制（`budget`）は別物である。**`usage` は測るだけで、
+ * 何も抑止しない（docs/roadmap.md §4「計測と抑止を混同しない」）。
+ */
 export interface RecallUsage {
+  /** 返した全量（`memories` tier + 目次帯）。 */
   chars: number;
   estimatedTokens: number;
   counter: "heuristic" | "exact";
   byTier: { full: number; digest: number; index: number };
-  /** budget が申告されている場合のみ: usage / budget */
+  /**
+   * 目次帯（`IndexBand`）の実費。**`budget` の対象外**であり、
+   * `budget` をどれだけ小さくしてもこの分は削られない（理由は `RecallBudget` を見よ）。
+   *
+   * `chars - indexChars` が予算の対象になった量である——**予算の内と外が、
+   * 数の形から読めるようにするために独立して返す。**（`byTier.index` と同じ値。）
+   */
+  indexChars: number;
+  /**
+   * `budget` が申告されている場合のみ。**予算の対象（`memories` tier）が、
+   * 申告された予算のどれだけを使ったか。**
+   *
+   * **⚠ 分子は `memories` tier だけであり、目次帯を含まない。したがって
+   * この値は 1 を超えない**（段4の切り詰めが予算を守ることを保証しているため）。
+   *
+   * 以前は分子に目次帯を含めていたため 248% のような「割合として成立しない値」が出ていた。
+   * 「私が渡した予算のうち記憶がどれだけ使ったか」と「この応答は全体でいくらかかったか」は
+   * **別の問い**であり、1つの数で両方に答えようとするとどちらかが嘘になる。
+   * 後者は `chars` と `indexChars` を見れば分かる。
+   */
   share?: number;
 }
 
@@ -264,18 +290,41 @@ export const RecallUsageSchema = z.object({
     digest: z.number().int().nonnegative(),
     index: z.number().int().nonnegative(),
   }),
-  share: z.number().nonnegative().optional(),
+  indexChars: z.number().int().nonnegative(),
+  share: z.number().nonnegative().max(1).optional(),
 }) satisfies z.ZodType<RecallUsage>;
 
+/**
+ * `recall()` に渡す予算（docs/recall.md §6）。
+ *
+ * **⚠ 予算が縛るのは `memories` tier（返す Memory の digest）だけである。
+ * 目次帯（`IndexBand`）は予算の対象外であり、`budget` をどれだけ小さくしても削られない。**
+ *
+ * 理由は [ADR 0008](../../../docs/decisions/0008-absence-taxonomy.md) の芯にある——
+ * 目次帯の唯一の存在理由は **「recall が0件でも、何が在るかは言える」** ことである。
+ * これを予算の対象にすると、**呼び出し側が渡した数字ひとつでその保証が消える。**
+ * 予算次第で消える保証は、保証ではない。
+ *
+ * **だから名前に `Memory` を入れている。**「recall 全体の上限」ではないことが、
+ * 型を見ただけで分かるようにするためである。目次帯が実際に何文字かは
+ * `RecallUsage.indexChars` で別に返る——呼び出し側は足せば全体量が分かる。
+ */
 export interface RecallBudget {
-  maxChars?: number;
-  maxTokens?: number;
+  /** `memories` tier の合計文字数の上限。目次帯は含まない。 */
+  maxMemoryChars?: number;
+  /** `memories` tier の合計トークン数の上限。目次帯は含まない。 */
+  maxMemoryTokens?: number;
+  /**
+   * 呼び出し側が申告する「プロンプト全体の」トークン予算。
+   * `memories` tier の切り詰めにのみ使う（mnemo はプロンプトを組み立てないため、
+   * 全体を測ることは原理的にできない。docs/recall.md §6「正直に書くべき限界」）。
+   */
   promptBudgetTokens?: number;
 }
 
 export const RecallBudgetSchema = z.object({
-  maxChars: z.number().int().positive().optional(),
-  maxTokens: z.number().int().positive().optional(),
+  maxMemoryChars: z.number().int().positive().optional(),
+  maxMemoryTokens: z.number().int().positive().optional(),
   promptBudgetTokens: z.number().int().positive().optional(),
 }) satisfies z.ZodType<RecallBudget>;
 

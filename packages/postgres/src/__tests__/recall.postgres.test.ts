@@ -315,7 +315,7 @@ describe("runtime.recall() — 本物の Postgres + pgvector（roadmap.md 段階
 
     const withTightBudget = await runtime.recall(ctx, {
       vector: [1, 0, 0],
-      budget: { maxChars: 10 },
+      budget: { maxMemoryChars: 10 },
     });
     const tightIds = withTightBudget.memories.map((m) => m.memoryId);
     expect(tightIds).not.toContain(a.id);

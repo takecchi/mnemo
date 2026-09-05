@@ -61,7 +61,7 @@ pnpm --filter @mnemo/example-chat run test:db
 
 固定の合成会話（後述）を `observe()` で取り込み、終盤の質問を `recall()` する。
 `recall()` の返り値のうち roadmap.md 段階7の完了条件そのものである `omitted` と
-`usage` を画面に出し、さらに小さな `budget`（`maxChars`）を渡した場合に実際に候補が
+`usage` を画面に出し、さらに小さな `budget`（`maxMemoryChars`）を渡した場合に実際に候補が
 落ちること（`omitted` に `budget_dropped` が現れ、`memories` の件数が減ること）を示す。
 
 ---
@@ -169,15 +169,20 @@ pnpm --filter @mnemo/example-chat run test:db
   実際のアプリケーションはこれらが上乗せされる分、絶対値としての削減幅はさらに
   大きくなりうる（逆に mnemo 側の固定費の比率は相対的に小さくなる）。
 - **`budget` は `memories` tier（digest の合計文字数）だけを切り詰め、`index` tier
-  （目次帯の JSON）は切り詰めない。** そのため小さすぎる `budget.maxChars` を渡すと、
-  `usage.share`（`usage / budget`）が **100% を超えることがある**——`chat` サブコマンドの
-  出力で実際に観測できる（`budget maxChars=60` に対して `usage.chars=149` になり
-  `share=248.3%` と出る）。これは実装のバグではなく、
-  [docs/recall.md §6](../../docs/recall.md) が定める「budget は段4（予算による切り詰め）
-  にだけ効く」という設計をそのまま反映した挙動である——**だが呼び出し側が
-  `budget.maxChars` を「recall 全体の上限」だと誤解する余地があることは、
-  ここで実際に動かして初めて分かった。** マネージャーへの報告事項とする。
-- ここで測っているのは1回の `recall()` 呼び出しの量であり、複数ターンにわたる
+  （目次帯の JSON）は切り詰めない。** これは意図した設計である——目次帯の唯一の存在理由は
+  「recall が0件でも、何が在るかは言える」ことであり
+  （[ADR 0008](../../docs/decisions/0008-absence-taxonomy.md)）、
+  **呼び出し側が渡した数字ひとつでその保証が消えてはならない。**
+  したがって `budget.maxMemoryChars` より目次帯のほうが大きい場合、
+  `usage.chars`（全量）は予算を上回る。これは隠さずそのまま出す。
+  ただし `usage.share` は「**予算の対象が予算のどれだけを使ったか**」なので 1 を超えない。
+  目次帯の実費は `usage.indexChars` として別に返るため、
+  呼び出し側は `chars` と `indexChars` を見れば「なぜ全量が予算を上回ったか」が分かる。
+
+  **この節は当初、`share` が 248.3% になることを「仕様どおりの挙動」として記録していた。
+  それは誤りだった**——割合として成立しない数を割合の顔で返していた。
+  予算の項目名（`maxChars` → `maxMemoryChars`）と `share` の定義を直してある
+  （[docs/recall.md §6](../../docs/recall.md) の2つの訂正節を参照）。
   「セッション全体でどれだけ削れたか」ではない（[docs/recall.md §6](../../docs/recall.md)
   「セッション基準値を持たない」を参照。mnemo はセッションという概念を持たない）。
 - この比較は**会話1本・固定のシナリオ**に基づく。実際の効果は会話の性質

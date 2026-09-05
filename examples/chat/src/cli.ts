@@ -72,11 +72,11 @@ async function runChat(): Promise<void> {
     console.log("呼び出し側がプロンプトへ積む文字列（recall() の返り値だけから組み立てる例）:");
     console.log(buildMnemoPrompt(withoutBudget));
 
-    console.log(`\n=== budget を渡すと実際に切り詰められる（maxChars=${TINY_BUDGET_CHARS}） ===`);
+    console.log(`\n=== budget を渡すと実際に切り詰められる（maxMemoryChars=${TINY_BUDGET_CHARS}） ===`);
     const withBudget = await queryRecall(handle.runtime, ctx, conversation, {
-      budget: { maxChars: TINY_BUDGET_CHARS },
+      budget: { maxMemoryChars: TINY_BUDGET_CHARS },
     });
-    console.log(formatRecall(withBudget, `budget maxChars=${TINY_BUDGET_CHARS}`));
+    console.log(formatRecall(withBudget, `budget maxMemoryChars=${TINY_BUDGET_CHARS}`));
 
     console.log("\n=== まとめ ===");
     console.log(`naive chars                  : ${naive.chars}`);

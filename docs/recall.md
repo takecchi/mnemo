@@ -319,16 +319,17 @@ type GroupCount = {
 
 ```ts
 type RecallUsage = {
-  chars: number
+  chars: number              // 返した全量（memories tier + 目次帯）
   estimatedTokens: number
   counter: 'heuristic' | 'exact'
   byTier: { full: number; digest: number; index: number }
-  share?: number   // budget が申告されている場合のみ: usage / budget
+  indexChars: number         // 目次帯の実費。budget の対象外（下記）
+  share?: number             // budget 申告時のみ: memories tier / budget。1 を超えない
 }
 
 type RecallBudget = {
-  maxChars?: number
-  maxTokens?: number
+  maxMemoryChars?: number    // memories tier の上限。目次帯は含まない
+  maxMemoryTokens?: number   // 同上（トークン）
   promptBudgetTokens?: number
 }
 
@@ -336,6 +337,42 @@ interface TokenCounter {
   count(text: string): { tokens: number; counter: 'heuristic' | 'exact' }
 }
 ```
+
+### ⚠ 目次帯は予算の対象外である（2026-09 訂正）
+
+**`budget` が縛るのは `memories` tier だけである。目次帯（`IndexBand`）は予算の対象外であり、
+`budget` をどれだけ小さくしても削られない。**
+
+理由は [ADR 0008](./decisions/0008-absence-taxonomy.md) の芯にある——目次帯の唯一の存在理由は
+**「recall が0件でも、何が在るかは言える」**ことである。これを予算の対象にすると、
+**呼び出し側が渡した数字ひとつでその保証が消える。予算次第で消える保証は、保証ではない。**
+
+**当初案は予算の項目を `maxChars` / `maxTokens` と呼んでいた。これは誤りだった**——
+「recall 全体の上限」と読める名前でありながら、実際には `memories` tier しか縛らない。
+名前を `maxMemoryChars` / `maxMemoryTokens` に改め、**何に対する上限なのかを名前に出す。**
+名前で誤解を潰しておかないと、次に誰かが「予算なのに効かないのは変だ」と言って
+目次帯を予算に含めにいく。**そのとき止めるのは、名前ではなく上に書いた理由である。**
+
+### ⚠ `share` は「予算の何割を使ったか」であり、「全体でいくらか」ではない（2026-09 訂正）
+
+当初の実装は `share` の分子に**目次帯を含めていた**。目次帯は予算の対象外なので、
+予算が縛っていない量まで分子に数えることになり、**`share` が 100% を超えた**
+（サンプルアプリで 248.3% を実測）。
+
+**1つの数で2つの問いに答えようとすると、どちらかが嘘になる。**
+
+| 問い | 答える値 |
+|---|---|
+| 私が渡した予算のうち、記憶がどれだけ使ったか | `share`（**1 を超えない**） |
+| この応答は全体でいくらかかったか | `chars`（= `memories` tier + `indexChars`） |
+
+⟹ **`share` の分子は `memories` tier だけとする。**段4の切り詰めが `memories` tier を
+予算内に収めることを保証しているので、この定義なら `share` は 1 を超えない
+（`RecallUsageSchema` が型としても 1 以下しか受け付けない）。
+全体量を知りたい呼び出し側は `chars` を見るか、`chars - indexChars` で予算対象分を取れる。
+
+**これは「無い」の種類を潰さない、という規律を*数*に当てたものである**——
+割合として成立しない数を、割合の顔で返さない。
 
 `budget` は `recall()` への入力、`usage` は出力である。この二つを分けて持つことに意味がある——後述する。
 

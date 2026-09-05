@@ -57,7 +57,7 @@ describe("examples/chat: observe → recall の往復（本物の Postgres）", 
       await ingestConversation(handle.runtime, ctx, conversation);
       const withoutBudget = await queryRecall(handle.runtime, ctx, conversation);
       const withBudget = await queryRecall(handle.runtime, ctx, conversation, {
-        budget: { maxChars: 40 },
+        budget: { maxMemoryChars: 40 },
       });
 
       const dropped = withBudget.omitted.find((o) => o.kind === "budget_dropped");

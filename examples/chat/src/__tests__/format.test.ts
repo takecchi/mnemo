@@ -13,6 +13,7 @@ function baseResult(overrides: Partial<RecallResult> = {}): RecallResult {
       estimatedTokens: 0,
       counter: "heuristic",
       byTier: { full: 0, digest: 0, index: 0 },
+      indexChars: 0,
     },
     explain: { stages: [] },
     ...overrides,
@@ -34,6 +35,7 @@ describe("formatRecall", () => {
         estimatedTokens: 13,
         counter: "heuristic",
         byTier: { full: 0, digest: 50, index: 0 },
+        indexChars: 0,
         share: 0.5,
       },
     });
