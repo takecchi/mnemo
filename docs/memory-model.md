@@ -314,12 +314,14 @@ partial index は**離散値・低カーディナリティ**のフィルタに�
 ```sql
 CREATE INDEX idx_memories_recall_gate
   ON memories (tenant_id, status, decay_floor_at)
-  WHERE status = 'active';
+  WHERE status IN ('active', 'contested');
 ```
 
-`status = 'active'` が partial 述語（離散・低カーディナリティ、正しい使い方）であり、
-`decay_floor_at` は述語ではなく索引の3列目として範囲スキャンに使われる。この違いを
-取り違えると「partial index で忘却を解決しようとして効かない」という失敗をなぞることになる。
+`status IN ('active', 'contested')` が partial 述語（離散・低カーディナリティ、正しい
+使い方）であり、`decay_floor_at` は述語ではなく索引の3列目として範囲スキャンに使われる。
+この違いを取り違えると「partial index で忘却を解決しようとして効かない」という失敗を
+なぞることになる。（述語が `'active'` 単独ではなく `'contested'` も含む理由は §10・
+docs/decisions/0011-no-window-count-in-ann-stage.md を参照。）
 
 ### リスクと対処
 
@@ -613,10 +615,16 @@ CREATE UNIQUE INDEX uq_memories_extraction
   ON memories (tenant_id, source_observation_id, extractor_version, content_hash)
   WHERE source_observation_id IS NOT NULL;
 
--- recall 段1のゲート（§7）: tenant + active + decay_floor_at > now() の範囲スキャン
+-- recall 段1のゲート（§7）: tenant + (active|contested) + decay_floor_at の範囲スキャン
+--
+-- ⚠ 2026-09 訂正（PR #2、docs/decisions/0011-no-window-count-in-ann-stage.md）:
+-- 当初案の述語は WHERE status = 'active' だった。これでは contested な Memory が
+-- 段1の候補集合にそもそも入らず、「争われている主張を、争われていない顔で出さない」
+-- （mandatory companion retrieval、§5・docs/recall.md §8）が実装として成立しなかった。
+-- 述語を 'active' 単独から ('active', 'contested') に広げて修正する。
 CREATE INDEX idx_memories_recall_gate
   ON memories (tenant_id, status, decay_floor_at)
-  WHERE status = 'active';
+  WHERE status IN ('active', 'contested');
 
 -- 置換の解決（§5）: 「この Memory は何に置き換わったか」の単純な索引アクセス
 CREATE INDEX idx_memories_superseded_by
@@ -642,10 +650,15 @@ CREATE INDEX idx_memories_tags
   ON memories USING gin (tenant_id, tags);
 ```
 
-`idx_memories_recall_gate` について: `status = 'active'` は離散・低カーディナリティの
-partial 述語として使う（正しい使い方）。`decay_floor_at` は述語ではなく索引の3列目に
-置き、`WHERE decay_floor_at > now()` を通常の範囲スキャンとして解決する（§7 で述べた
-partial index の取り違えを避けるための形）。
+`idx_memories_recall_gate` について: `status IN ('active', 'contested')` は離散・
+低カーディナリティの partial 述語として使う（正しい使い方。2値になったが離散性は変わらない）。
+`decay_floor_at` は述語ではなく索引の3列目に置き、`WHERE decay_floor_at > now()` を
+通常の範囲スキャンとして解決する（§7 で述べた partial index の取り違えを避けるための形）。
+**ただし roadmap.md の Phase 1 範囲の整理により、この `decay_floor_at > now()` という
+読み取りフィルタ自体は Phase 2 から有効にする。Phase 1 は `decay_floor_at` を書き込む
+だけで、段1の読み取りフィルタには使わない。** 索引の3列目としては最初から持たせておく
+ことで、Phase 2 で読み取りに使い始める際に索引を作り直す必要が無いようにする
+（docs/decisions/0011-no-window-count-in-ann-stage.md に整理を記録）。
 
 ### `memory_embeddings_<space>`（Phase 1。テーブルは空間ごとに作る）
 

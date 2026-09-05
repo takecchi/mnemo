@@ -5,7 +5,6 @@ on:
     branches: [main]
   pull_request:
 
-# DB を使うジョブはこの PR では作らない（次の PR で足す。roadmap.md 段階2以降）。
 jobs:
   build:
     name: typecheck / lint / test / build
@@ -39,3 +38,64 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  postgres:
+    name: packages/postgres (本物の Postgres + pgvector)
+    runs-on: ubuntu-latest
+    # roadmap.md 段階2の完了条件: 「testkit の適合テストが postgres 実装に対してすべて通る
+    # （2テナント分離のテストを含む）。EXPLAIN で実際に HNSW 索引が使われることを確認する
+    # 検査が通る」。擬似物での置き換えを認めない——本物の Postgres の service container に
+    # 対して実行する。
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mnemo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mnemo_ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Enable required extensions (vector / btree_gin / pgcrypto)
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d mnemo_ci -c "select 1;" \
+            && PGPASSWORD=postgres psql -h localhost -U postgres -d mnemo_ci \
+              -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+              -c "CREATE EXTENSION IF NOT EXISTS btree_gin;" \
+              -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Build @mnemo/core (postgres package depends on it)
+        run: pnpm --filter @mnemo/core run build
+
+      - name: Typecheck @mnemo/postgres
+        run: pnpm --filter @mnemo/postgres run typecheck
+
+      - name: Run migrations (packages/postgres の唯一のマイグレーション実行口)
+        run: pnpm --filter @mnemo/postgres run migrate
+
+      - name: Run postgres conformance / EXPLAIN / ADR 0011 tests against the real database
+        run: pnpm --filter @mnemo/postgres run test:db
+
+      - name: Build @mnemo/postgres
+        run: pnpm --filter @mnemo/postgres run build

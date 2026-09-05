@@ -1,0 +1,142 @@
+import {
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+/**
+ * Drizzle のテーブル定義（docs/memory-model.md §10）。
+ *
+ * **これらの定義はスキーマの生成には使わない。** テーブル・索引の実体は
+ * `migrations/0001_init.sql`（手書き DDL、ADR 0001）が作る。この `schema.ts` は
+ * `drizzle-orm` のクエリビルダに型を与えるためだけに存在し、`drizzle-kit push`
+ * には一切渡さない。したがってここでの `CHECK` 制約や `DEFAULT` の宣言は
+ * ドキュメントとしての意味しか持たず、実際の制約は `migrations/0001_init.sql` 側にある
+ * （二重管理になるが、`drizzle-kit push` の operator class 欠落バグを踏まないための
+ * 意図的なトレードオフ。ADR 0001 参照）。
+ *
+ * `memory_embeddings_<space>` は空間ごとに動的にテーブルが増えるため、ここでは
+ * 定義しない（`./vector-space.ts` が生 SQL で扱う）。
+ */
+
+export const observations = pgTable("observations", {
+  id: uuid("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  subjectId: text("subject_id"),
+  externalId: text("external_id"),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "date" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
+});
+
+export const memories = pgTable(
+  "memories",
+  {
+    id: uuid("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    subjectId: text("subject_id"),
+
+    sourceObservationId: uuid("source_observation_id"),
+    extractorVersion: text("extractor_version"),
+
+    content: text("content").notNull(),
+    contentHash: text("content_hash").notNull(),
+    digest: text("digest").notNull(),
+    digestSource: text("digest_source").notNull(),
+
+    provenanceKind: text("provenance_kind").notNull(),
+    provenance: jsonb("provenance").notNull(),
+
+    status: text("status").notNull(),
+    supersededById: uuid("superseded_by_id"),
+    contestedWithId: uuid("contested_with_id"),
+
+    tags: text("tags").array().notNull(),
+
+    occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "date" }),
+    recordedAt: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
+    lastReinforcedAt: timestamp("last_reinforced_at", { withTimezone: true, mode: "date" }),
+    validFrom: timestamp("valid_from", { withTimezone: true, mode: "date" }), // Phase 2
+    validUntil: timestamp("valid_until", { withTimezone: true, mode: "date" }), // Phase 2
+
+    strength: real("strength").notNull(),
+    halfLifeHours: real("half_life_hours").notNull(),
+    decayFloorAt: timestamp("decay_floor_at", { withTimezone: true, mode: "date" }).notNull(),
+
+    embeddingStatus: text("embedding_status").notNull(),
+
+    purgedAt: timestamp("purged_at", { withTimezone: true, mode: "date" }), // Phase 2
+
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [index("idx_memories_by_subject").on(table.tenantId, table.subjectId, table.status)],
+);
+
+export const memoryEvents = pgTable("memory_events", {
+  id: uuid("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  memoryId: uuid("memory_id"),
+  kind: text("kind").notNull(),
+  at: timestamp("at", { withTimezone: true, mode: "date" }).notNull(),
+  actor: jsonb("actor").notNull(),
+  digestSnapshot: text("digest_snapshot"),
+  sizeBeforeBytes: integer("size_before_bytes"),
+  meta: jsonb("meta").notNull(),
+});
+
+export const recalls = pgTable("recalls", {
+  id: uuid("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  subjectId: text("subject_id"),
+  query: jsonb("query").notNull(),
+  budget: jsonb("budget"),
+  omitted: jsonb("omitted").notNull(),
+  usage: jsonb("usage").notNull(),
+  indexBand: jsonb("index_band").notNull(),
+  explain: jsonb("explain").notNull(),
+  returnedMemoryIds: uuid("returned_memory_ids").array().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+});
+
+export const recallUsages = pgTable(
+  "recall_usages",
+  {
+    tenantId: text("tenant_id").notNull(),
+    recallId: uuid("recall_id").notNull(),
+    memoryId: uuid("memory_id").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.recallId, table.memoryId] })],
+);
+
+export const outbox = pgTable("outbox", {
+  id: uuid("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").notNull(),
+  availableAt: timestamp("available_at", { withTimezone: true, mode: "date" }).notNull(),
+  claimedAt: timestamp("claimed_at", { withTimezone: true, mode: "date" }),
+  claimedBy: text("claimed_by"),
+  attempts: integer("attempts").notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+  failedAt: timestamp("failed_at", { withTimezone: true, mode: "date" }),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+});
+
+export const tenantSettings = pgTable("tenant_settings", {
+  tenantId: text("tenant_id").primaryKey(),
+  defaultHalfLifeHours: real("default_half_life_hours").notNull(),
+  eventRetentionDays: integer("event_retention_days"),
+  taxonomyMode: text("taxonomy_mode").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+});

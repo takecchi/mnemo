@@ -50,12 +50,21 @@ export function buildNewObservationFixture(
   };
 }
 
+/**
+ * `memoryId` の既定は `null` にする。docs/memory-model.md §9 の DDL では
+ * `memory_events.memory_id` が `memories(id)` への外部キーであり（`events_purged` の場合のみ
+ * NULL、という制約はあるが、それ以外の kind で NULL であること自体は妨げない）、実在しない
+ * `memories` 行を指す固定文字列を既定値にすると、外部キー制約を持つ実装（`packages/postgres`）
+ * に対して常に失敗する。「実在する Memory に紐づく監査ログ」を検査したいテストは
+ * `EventStoreConformanceOptions.prepareMemoryId`（adapter が実在の Memory を用意して id を
+ * 返すフック）を使う。
+ */
 export function buildNewMemoryEventFixture(
   overrides: Partial<NewMemoryEvent> = {},
 ): NewMemoryEvent {
   return {
     tenantId: "tenant-1",
-    memoryId: "mem-fixture-1",
+    memoryId: null,
     kind: "created",
     actor: { type: "system" },
     digestSnapshot: null,

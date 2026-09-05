@@ -120,18 +120,23 @@ recall のクエリ設計を考えるとき、次の二つは似て見えるが*
 SELECT
   m.id,
   m.digest,
-  e.embedding <=> $1              AS distance,
-  count(*) OVER ()                AS candidate_count
+  e.embedding <=> $1              AS distance
 FROM memory_embeddings_default e
 JOIN memories m ON m.id = e.memory_id
 WHERE m.tenant_id = $2
-  AND m.status = 'active'
-  AND m.decay_floor_at > now()
+  AND m.status IN ('active', 'contested')  -- 誤り1の修正。後述
+  -- AND m.decay_floor_at > now()          -- Phase 2 から有効（roadmap.md）。Phase 1 はこの行を含めない
 ORDER BY e.embedding <=> $1
 LIMIT $3;  -- k' = k × over-fetch 係数
 ```
 
-`ORDER BY` には距離演算子の結果をそのまま置き、昇順のまま渡す。減衰・タグ一致はここでは掛けない——段2の仕事である。`count(*) OVER ()` を同一クエリに含めることで、「今回のフィルタ条件下で候補が何件あったか」を追加のクエリ無しに取得する。これは `omitted.countKind = 'exact'` を安く出すための実務上の要である（§4）。
+`ORDER BY` には距離演算子の結果をそのまま置き、昇順のまま渡す。減衰・タグ一致はここでは掛けない——段2の仕事である。
+
+**⚠ 2026-09 訂正が二つ入っている（PR #2、docs/decisions/0011-no-window-count-in-ann-stage.md に実測記録がある）:**
+
+1. **`status` の条件を `'active'` 単独から `IN ('active', 'contested')` に広げた。** 当初案は `m.status = 'active'` のみだった。しかしこれでは `contested` な Memory が段1の候補集合にそもそも入らず、「争われている主張を、争われていない顔で出さない」（mandatory companion retrieval、`./memory-model.md` §5・本書 §8）が実装として成立しない。対応する索引（`idx_memories_recall_gate`、`./memory-model.md` §10）の述語も同じ形に修正済みである。
+2. **`m.decay_floor_at > now()` の行を Phase 1 のクエリから外した。** roadmap.md の Phase 1 範囲の記述（「`decay_floor_at` 列は Phase 1 では書き込むだけ」「Phase 2 で `WHERE decay_floor_at > now()` を使い始めるだけ」）が一次資料であり、本書の当初案がこの行を最初から含めていたのは Phase 分けと矛盾していた。Phase 1 はこの行を持たない。索引の3列目としては最初から `decay_floor_at` を持つため、Phase 2 で読み取りに使い始める際に索引の作り直しは不要。
+3. **`count(*) OVER ()` を段1のクエリから外した。** 当初案は「追加のクエリ無しに候補件数を正確に取得でき、`omitted.countKind = 'exact'` を安く出すための実務上の要である」としていたが、これは HNSW 索引の上では成立しないことが実測で分かった（PostgreSQL 18.6 + pgvector 0.8.6、50万行）。索引スキャンを使うプランでは `count(*) OVER ()` の値は真の候補件数ではなく `hnsw.ef_search` に依存する値になり（データと無関係な定数）、正しい件数を出すプランでは索引が捨てられ Seq Scan に落ちる（本書冒頭が禁じる「索引が効かない形」そのもの）。**代わりに §5（目次帯）が既にスコープ全体の群カウント集約を走らせており、その総和が「フィルタ条件下に何件あったか」そのものである。** 追加コスト無しに exact な件数を得られる経路は、段1のクエリではなく段5の集約から得る。詳細は ADR 0011（`docs/decisions/0011-no-window-count-in-ann-stage.md`）を参照。
 
 ### over-fetch 係数の決め方
 
