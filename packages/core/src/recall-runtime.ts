@@ -5,6 +5,7 @@ import type { MemoryStore } from "./interfaces/memory-store.js";
 import type { TokenCounter } from "./interfaces/token-counter.js";
 import type { VectorStore, VectorHit } from "./interfaces/vector-store.js";
 import type { MemoryId } from "./ids.js";
+import { NOT_INDEXED_REASONS } from "./recall.js";
 import type { Memory } from "./memory.js";
 import {
   DEFAULT_OVER_FETCH_FACTOR,
@@ -409,12 +410,19 @@ export async function runRecall(
       countKind: aggregate.filteredPeriod.countKind,
     });
   }
-  if (aggregate.notIndexed.count > 0) {
-    omitted.push({
-      kind: "not_indexed",
-      count: aggregate.notIndexed.count,
-      countKind: aggregate.notIndexed.countKind,
-    });
+  // 理由ごとに1件ずつ返す（`filtered` の `condition` と同じ形）。
+  // 一時的な遅延（pending）と恒久的な失敗（failed）と意図した除外（skipped）を
+  // 1つに潰さない——ADR 0008 の判定基準（次の一手が変わるか）による。
+  for (const reason of NOT_INDEXED_REASONS) {
+    const entry = aggregate.notIndexed[reason];
+    if (entry.count > 0) {
+      omitted.push({
+        kind: "not_indexed",
+        reason,
+        count: entry.count,
+        countKind: entry.countKind,
+      });
+    }
   }
 
   // -------------------------------------------------------------------

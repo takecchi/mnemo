@@ -50,8 +50,25 @@ export interface BudgetDroppedOmission {
   countKind: CountKind;
 }
 
+/**
+ * `not_indexed` の理由。`embeddingStatus` のうち `'ready'` 以外の3値に対応する。
+ *
+ * ADR 0008 の基準（区別があると次の一手が変わるか）に照らして分ける:
+ * `pending` は待てば解決する、`failed` はパイプラインの調査が要る、
+ * `skipped` は意図した除外なので何もしなくてよい。
+ */
+export type NotIndexedReason = "pending" | "failed" | "skipped";
+
+export const NotIndexedReasonSchema = z.enum([
+  "pending",
+  "failed",
+  "skipped",
+]) satisfies z.ZodType<NotIndexedReason>;
+
 export interface NotIndexedOmission {
   kind: "not_indexed";
+  /** なぜ索引に載っていないか。理由ごとに1件ずつ返す（`filtered` の `condition` と同じ形）。 */
+  reason: NotIndexedReason;
   count: number;
   countKind: CountKind;
 }
@@ -104,6 +121,7 @@ const BudgetDroppedOmissionSchema = z.object({
 
 const NotIndexedOmissionSchema = z.object({
   kind: z.literal("not_indexed"),
+  reason: NotIndexedReasonSchema,
   count: z.number().int().nonnegative(),
   countKind: CountKindSchema,
 }) satisfies z.ZodType<NotIndexedOmission>;
@@ -208,11 +226,14 @@ export interface ScopeAggregate {
   /** groups の総和が totalInScope と一致することの信頼度。Phase 1 は常に 'exact'。 */
   countKind: CountKind;
   /**
-   * スコープ内だが埋め込みがまだ無い（`embeddingStatus !== 'ready'`）件数。
-   * スコープには含まれる（groups/totalInScope に乗っている）ため、`filtered` ではなく
-   * `Omission.kind = 'not_indexed'` の材料になる。
+   * スコープ内だが埋め込みがまだ無い件数を、**理由ごとに分けて**持つ。
+   *
+   * 1つの数値に潰さないのは ADR 0008 の判定基準（その区別があると呼び出し側の次の一手が
+   * 変わるか）による。**変わる**——`pending` は「待つ / 再試行する」、`failed` は
+   * 「埋め込みパイプラインを疑う」、`skipped` は「意図した除外なので何もしない」。
+   * これを1つの `not_indexed` に潰すと、恒久的な失敗と一時的な遅延が同じ顔になる。
    */
-  notIndexed: { count: number; countKind: CountKind };
+  notIndexed: Record<NotIndexedReason, { count: number; countKind: CountKind }>;
   /** status = 'archived' で「スコープを定義するフィルタ」により落ちた件数。 */
   filteredArchived: { count: number; countKind: CountKind };
   /** status IN ('superseded','forgotten') で落ちた件数（本 PR の裁量による束ね方。PR 本文参照）。 */
@@ -463,3 +484,6 @@ export interface NewRecallRecord {
   explain: { stages: StageTrace[] };
   returnedMemoryIds: MemoryId[];
 }
+
+/** `not_indexed` の理由の全列挙（`recall()` が理由ごとに Omission を1件ずつ返すのに使う）。 */
+export const NOT_INDEXED_REASONS: readonly NotIndexedReason[] = ["pending", "failed", "skipped"];

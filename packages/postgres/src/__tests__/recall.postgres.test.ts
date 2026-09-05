@@ -248,6 +248,7 @@ describe("runtime.recall() — 本物の Postgres + pgvector（roadmap.md 段階
     // not_indexed(pending) の1件 + occurredAt が古い1件のうち、pending の1件だけが not_indexed。
     expect(result.omitted).toContainEqual({
       kind: "not_indexed",
+      reason: "pending",
       count: 1,
       countKind: "exact",
     });

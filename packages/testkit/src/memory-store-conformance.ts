@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { EmbeddingStatus } from "@mnemo/core";
 import type { Ctx, MemoryStore, RecallId } from "@mnemo/core";
 import { buildNewMemoryFixture, buildNewObservationFixture } from "./test-data.js";
 
@@ -651,21 +652,31 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
       expect(aggregate.filteredPeriod.count).toBe(1);
     });
 
-    it("aggregateScope は embeddingStatus !== 'ready' な in-scope Memory を notIndexed に計上するが、totalInScope からは除かない", async () => {
+    it("aggregateScope は notIndexed を理由ごと（pending/failed/skipped）に分けて数え、totalInScope からは除かない", async () => {
+      // 各理由の件数を**すべて異なる数**にする。同数だと、理由の取り違え
+      // （例: failed を数えるべきところで skipped を数える）が起きても
+      // 値が偶然一致して検出できない。
       const store = await createStore();
       const ctx: Ctx = { tenantId: "tenant-1" };
-      await store.createMemory(
-        ctx,
-        buildNewMemoryFixture({ tenantId: "tenant-1", embeddingStatus: "pending" }),
-      );
-      await store.createMemory(
-        ctx,
-        buildNewMemoryFixture({ tenantId: "tenant-1", embeddingStatus: "ready" }),
-      );
+      const counts = { pending: 1, failed: 2, skipped: 3, ready: 4 } as const;
+      for (const [embeddingStatus, n] of Object.entries(counts)) {
+        for (let i = 0; i < n; i += 1) {
+          await store.createMemory(
+            ctx,
+            buildNewMemoryFixture({
+              tenantId: "tenant-1",
+              embeddingStatus: embeddingStatus as EmbeddingStatus,
+            }),
+          );
+        }
+      }
 
       const aggregate = await store.aggregateScope(ctx, {});
-      expect(aggregate.totalInScope).toBe(2);
-      expect(aggregate.notIndexed.count).toBe(1);
+      // 索引に載っていないものも in-scope である（目次帯には現れる）。
+      expect(aggregate.totalInScope).toBe(10);
+      expect(aggregate.notIndexed.pending.count).toBe(1);
+      expect(aggregate.notIndexed.failed.count).toBe(2);
+      expect(aggregate.notIndexed.skipped.count).toBe(3);
     });
 
     // -------------------------------------------------------------------

@@ -1,4 +1,4 @@
-# recall — 想起パイプラインと説明可能性
+| `not_indexed` | 記憶は存在するが埋め込みがまだ無いと分かる（`embeddingStatus`、`./memory-model.md` 参照）。記憶が失われたと誤認しない。**`reason` によって次の一手が分かれる**——`pending` は待つ・再試行する、`failed` は埋め込みパイプラインそのものを疑う、`skipped` は意図した除外なので何もしなくてよい。この3つを1つに潰すと、恒久的な失敗と一時的な遅延が同じ顔になる（2026-09 追記。当初案は `reason` を持たなかった）。 |# recall — 想起パイプラインと説明可能性
 
 `recall(ctx, query) -> RecallResult` は mnemo の中で最も説明責任が重い操作である。ここが返すものが、上位のアプリケーションが LLM に渡す文脈そのものになる。
 
@@ -18,7 +18,9 @@
 
 ```ts
 type RecallResult = {
-  recallId: string              // 記録された recall の識別子。observe() の usage 報告で使う
+  | { kind: 'not_indexed'
+      reason: 'pending' | 'failed' | 'skipped'
+      count: number; countKind: CountKind }recallId: string              // 記録された recall の識別子。observe() の usage 報告で使う
   memories: RecalledMemory[]    // 返ったもの。score 内訳 + 取得理由つき
   omitted: Omission[]           // 返らなかったものの分類（§4）
   index: IndexBand              // 目次帯。被覆不変条件を担う（§5）
@@ -200,6 +202,7 @@ type Omission =
   | { kind: 'budget_dropped'
       count: number; countKind: CountKind }
   | { kind: 'not_indexed'
+      reason: 'pending' | 'failed' | 'skipped'
       count: number; countKind: CountKind }
   | { kind: 'ann_truncated'
       countKind: 'unknown' }

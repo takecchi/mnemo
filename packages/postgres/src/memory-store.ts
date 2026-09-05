@@ -417,8 +417,14 @@ export class PostgresMemoryStore implements MemoryStore {
           WHERE status IN ('active', 'contested') AND ${inPeriod}
         )::int AS in_scope,
         count(*) FILTER (
-          WHERE status IN ('active', 'contested') AND ${inPeriod} AND embedding_status <> 'ready'
-        )::int AS not_indexed,
+          WHERE status IN ('active', 'contested') AND ${inPeriod} AND embedding_status = 'pending'
+        )::int AS not_indexed_pending,
+        count(*) FILTER (
+          WHERE status IN ('active', 'contested') AND ${inPeriod} AND embedding_status = 'failed'
+        )::int AS not_indexed_failed,
+        count(*) FILTER (
+          WHERE status IN ('active', 'contested') AND ${inPeriod} AND embedding_status = 'skipped'
+        )::int AS not_indexed_skipped,
         count(*) FILTER (WHERE status = 'archived')::int AS archived,
         count(*) FILTER (WHERE status IN ('superseded', 'forgotten'))::int AS other_status,
         count(*) FILTER (
@@ -434,7 +440,9 @@ export class PostgresMemoryStore implements MemoryStore {
         row as unknown as {
           key: string | null;
           in_scope: number;
-          not_indexed: number;
+          not_indexed_pending: number;
+          not_indexed_failed: number;
+          not_indexed_skipped: number;
           archived: number;
           other_status: number;
           period_filtered: number;
@@ -451,14 +459,25 @@ export class PostgresMemoryStore implements MemoryStore {
       }));
 
     const sum = (
-      field: "in_scope" | "not_indexed" | "archived" | "other_status" | "period_filtered",
+      field:
+        | "in_scope"
+        | "not_indexed_pending"
+        | "not_indexed_failed"
+        | "not_indexed_skipped"
+        | "archived"
+        | "other_status"
+        | "period_filtered",
     ) => rows.reduce((total, row) => total + row[field], 0);
 
     return {
       groups,
       totalInScope: sum("in_scope"),
       countKind: "exact",
-      notIndexed: { count: sum("not_indexed"), countKind: "exact" },
+      notIndexed: {
+        pending: { count: sum("not_indexed_pending"), countKind: "exact" },
+        failed: { count: sum("not_indexed_failed"), countKind: "exact" },
+        skipped: { count: sum("not_indexed_skipped"), countKind: "exact" },
+      },
       filteredArchived: { count: sum("archived"), countKind: "exact" },
       filteredStatus: { count: sum("other_status"), countKind: "exact" },
       filteredPeriod: { count: sum("period_filtered"), countKind: "exact" },

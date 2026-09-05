@@ -1,4 +1,5 @@
 import { defaultDecayStrategy } from "@mnemo/core";
+import type { NotIndexedReason } from "@mnemo/core";
 import type {
   Ctx,
   EmbeddingStatus,
@@ -270,7 +271,7 @@ export class InMemoryMemoryStore implements MemoryStore {
   async aggregateScope(ctx: Ctx, scope: RecallScope): Promise<ScopeAggregate> {
     const inScopeBySubject = new Map<string | null, number>();
     let totalInScope = 0;
-    let notIndexed = 0;
+    const notIndexed: Record<NotIndexedReason, number> = { pending: 0, failed: 0, skipped: 0 };
     let filteredArchived = 0;
     let filteredStatus = 0;
     let filteredPeriod = 0;
@@ -306,7 +307,7 @@ export class InMemoryMemoryStore implements MemoryStore {
       const key = memory.subjectId ?? null;
       inScopeBySubject.set(key, (inScopeBySubject.get(key) ?? 0) + 1);
       if (memory.embeddingStatus !== "ready") {
-        notIndexed += 1;
+        notIndexed[memory.embeddingStatus] += 1;
       }
     }
 
@@ -323,7 +324,11 @@ export class InMemoryMemoryStore implements MemoryStore {
       groups,
       totalInScope,
       countKind: "exact",
-      notIndexed: { count: notIndexed, countKind: "exact" },
+      notIndexed: {
+        pending: { count: notIndexed.pending, countKind: "exact" },
+        failed: { count: notIndexed.failed, countKind: "exact" },
+        skipped: { count: notIndexed.skipped, countKind: "exact" },
+      },
       filteredArchived: { count: filteredArchived, countKind: "exact" },
       filteredStatus: { count: filteredStatus, countKind: "exact" },
       filteredPeriod: { count: filteredPeriod, countKind: "exact" },

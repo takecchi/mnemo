@@ -175,7 +175,12 @@ describe("recall() — omitted.kind = 'not_indexed'（docs/recall.md §4）", ()
     await stores.memoryStore.createMemory(ctx, newMemory({ embeddingStatus: "pending" }));
 
     const result = await runtime.recall(ctx, {});
-    expect(result.omitted).toContainEqual({ kind: "not_indexed", count: 1, countKind: "exact" });
+    expect(result.omitted).toContainEqual({
+      kind: "not_indexed",
+      reason: "pending",
+      count: 1,
+      countKind: "exact",
+    });
     expect(result.index.totalInScope).toBe(1);
   });
 });
