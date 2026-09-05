@@ -1,0 +1,35 @@
+{
+  "name": "@mnemo/postgres",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MemoryStore / VectorStore / EventStore の Postgres + pgvector 実装（docs/memory-model.md §10）。",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "bin": {
+    "mnemo-postgres-migrate": "./dist/bin/migrate.js"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "migrate": "tsx src/bin/migrate.ts",
+    "test:db": "vitest run"
+  },
+  "dependencies": {
+    "@mnemo/core": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@mnemo/testkit": "workspace:*",
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

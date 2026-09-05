@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mnemo/core": ["../core/src/index.ts"],
+      "@mnemo/testkit": ["../testkit/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}
