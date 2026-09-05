@@ -52,6 +52,12 @@
 （`OPENAI_API_KEY` があれば本物に切り替わる）。この非対称は
 [examples/chat/README.md](./examples/chat/README.md) に明記してある。
 
+**ルートの `pnpm run test` は、DB テストを走らせたかどうかを必ず報告する。**
+`DATABASE_URL` が無ければ**「実行していない」と名指しで出力して緑のまま通り**、
+在れば DB テストも実行して**落ちれば赤くなる**。**緑をそのまま「全部通った」と読まないこと**——
+出力に「DB テストは実行していません」と出ていたら、その門は DB 側を見ていない。
+理由と、採らなかった案は [ADR 0015](./docs/decisions/0015-root-test-gate-reports-skipped-db-tests.md)。
+
 ---
 
 ## 文書の地図

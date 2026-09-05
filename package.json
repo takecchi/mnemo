@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx,mts,cts,js,mjs,cjs,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,mts,cts,js,mjs,cjs,json}\"",
-    "test": "pnpm -r --if-present run test",
+    "test": "vitest run && pnpm -r --if-present run test && node scripts/run-db-tests.mjs",
     "build": "pnpm -r --if-present run build"
   },
   "devDependencies": {

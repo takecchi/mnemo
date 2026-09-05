@@ -55,6 +55,10 @@ pnpm --filter @mnemora/example-chat run test:db
 `budget` による切り詰め・`runComparison` の量の計測をすべて実DBに対して検査する。
 ビルド不要（`vitest.config.mts` が `@mnemora/*` を各パッケージの `src` へ直接エイリアスする）。
 
+リポジトリのルートから `DATABASE_URL=... pnpm run test` を実行すれば、この検査も一緒に走る。
+`DATABASE_URL` を設定していない場合、ルートの門は**この検査を実行していないと明示して**通る
+（[ADR 0015](../../docs/decisions/0015-root-test-gate-reports-skipped-db-tests.md)）。
+
 ---
 
 ## `chat`: observe/recall の往復・omitted・usage・budget
