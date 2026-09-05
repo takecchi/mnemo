@@ -139,7 +139,9 @@ export const DEFAULT_HAYSTACK_SIZE = 60;
  */
 export function buildHaystackUtterance(index: number): string {
   if (!Number.isInteger(index) || index < 0) {
-    throw new Error(`buildHaystackUtterance: index は 0 以上の整数である必要がある(実際: ${index})`);
+    throw new Error(
+      `buildHaystackUtterance: index は 0 以上の整数である必要がある(実際: ${index})`,
+    );
   }
   const subject = HAYSTACK_SUBJECT[index % HAYSTACK_SUBJECT.length]!;
   const predicate =
@@ -249,7 +251,12 @@ export function buildProbeSetConversation(
 ): ProbeUtterance[] {
   const utterances: ProbeUtterance[] = [];
   for (const probe of PROBES) {
-    utterances.push({ externalId: goldExternalId(probe.id), text: probe.fact, kind: "gold", probeId: probe.id });
+    utterances.push({
+      externalId: goldExternalId(probe.id),
+      text: probe.fact,
+      kind: "gold",
+      probeId: probe.id,
+    });
     utterances.push({
       externalId: distractorExternalId(probe.id),
       text: probe.distractor,

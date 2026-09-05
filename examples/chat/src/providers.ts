@@ -65,7 +65,10 @@ export function selectProviderMode(env: EnvLike): ProviderMode {
 }
 
 /** `MNEMORA_LLM`/`MNEMORA_EMBEDDING` の値を検証する。空文字は「未指定」として扱う。 */
-function parseModeOverride(varName: "MNEMORA_LLM" | "MNEMORA_EMBEDDING", value: string | undefined): ProviderMode | undefined {
+function parseModeOverride(
+  varName: "MNEMORA_LLM" | "MNEMORA_EMBEDDING",
+  value: string | undefined,
+): ProviderMode | undefined {
   if (value === undefined || value === "") {
     return undefined;
   }

@@ -4,7 +4,12 @@ import { PROBES, buildProbeSetConversation, findTopicKeywordViolations } from ".
 import { resolveExternalId, runRetrievalQualityArm } from "../retrieval-quality.js";
 import { createExampleRuntime } from "../runtime-factory.js";
 import { formatNoApiCallsNotice } from "../usage-meter.js";
-import { closeTestClient, getTestClient, requireDatabaseUrl, resetTestDatabase } from "./test-db.js";
+import {
+  closeTestClient,
+  getTestClient,
+  requireDatabaseUrl,
+  resetTestDatabase,
+} from "./test-db.js";
 
 /**
  * retrieval-quality の「仕組み」だけを、擬似 provider(arm A 相当)だけで検査する
@@ -47,7 +52,18 @@ describe("examples/chat: retrieval-quality の仕組み(擬似 provider・本物
       expect(externalId).toBe("test-external-42");
 
       // 存在しない memoryId では null を返す(黙って何かに読み替えない)。
-      const missing = await resolveExternalId(handle.memoryStore, ctx, "does-not-exist");
+      //
+      // ⚠ ここで渡すのは「UUID として妥当だが存在しない」id である。当初は
+      // "does-not-exist" という文字列を渡していたが、`PostgresMemoryStore.get` は
+      // uuid 列への比較をそのまま投げるため `invalid input syntax for type uuid` で
+      // 例外になり、この検査自体が落ちた。`resolveExternalId` 側で例外を握り潰す案は
+      // 採らない——DB の異常を「辿れなかった」に読み替えると、系譜が壊れていることを
+      // 見逃す。**辿れない(null)と、壊れている(例外)は別物である。**
+      const missing = await resolveExternalId(
+        handle.memoryStore,
+        ctx,
+        "00000000-0000-4000-8000-000000000000",
+      );
       expect(missing).toBeNull();
     } finally {
       await handle.close();
