@@ -17,13 +17,13 @@
 
   **結果は決定的だった。**
 
-  | 実験 | 試行 | 結果 |
-  |---|---|---|
-  | 対照（N=1） | 6 | 6/6 成功 |
-  | race（自然な形、N=2） | 12 | 12/12、ちょうど1本成功・残りは失敗 |
-  | race（自然な形、N=4） | 12 | 12/12、ちょうど1本成功・残り3本は失敗 |
-  | ensureMigrationsTable 単体（N=2） | 10 | 10/10、ちょうど1本成功 |
-  | ensureMigrationsTable 単体（N=4） | 10 | 10/10、ちょうど1本成功・残り3本は失敗 |
+  | 実験                              | 試行 | 結果                                  |
+  | --------------------------------- | ---- | ------------------------------------- |
+  | 対照（N=1）                       | 6    | 6/6 成功                              |
+  | race（自然な形、N=2）             | 12   | 12/12、ちょうど1本成功・残りは失敗    |
+  | race（自然な形、N=4）             | 12   | 12/12、ちょうど1本成功・残り3本は失敗 |
+  | ensureMigrationsTable 単体（N=2） | 10   | 10/10、ちょうど1本成功                |
+  | ensureMigrationsTable 単体（N=4） | 10   | 10/10、ちょうど1本成功・残り3本は失敗 |
 
   **重要な切り分け**: 自然な形（`race`）で失敗するプロセスのエラーメッセージは
   `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`
@@ -31,17 +31,17 @@
   per-file try/catch が付けるはずの `"migration 0001_init.sql failed: ..."` という
   接頭辞が**付いていなかった**。これは `runMigrations` の中で唯一 try/catch に
   包まれていない `ensureMigrationsTable(pool)`（`CREATE TABLE IF NOT EXISTS
-  _mnemora_migrations`）で衝突していることを意味する。**つまり最初に噛むのは
+_mnemora_migrations`）で衝突していることを意味する。**つまり最初に噛むのは
   オーナーが疑っていた `CREATE TABLE observations`（無印）ではなかった。**
 
   台帳テーブルを先に直列で作ってから race させると（`race-preseeded`）、
   衝突点は `0001_init.sql` 冒頭の `CREATE EXTENSION IF NOT EXISTS vector/btree_gin/
-  pgcrypto` へ移った（`migration 0001_init.sql failed: duplicate key value
-  violates unique constraint "pg_extension_name_index"`、12/12 決定的）。
+pgcrypto` へ移った（`migration 0001_init.sql failed: duplicate key value
+violates unique constraint "pg_extension_name_index"`、12/12 決定的）。
   台帳と拡張の両方を先に直列で済ませてようやく（`race-preseeded2`、12+5試行）、
   オーナーが疑っていた層——無印 `CREATE TABLE`（`observations` 等）の衝突
   （`migration 0001_init.sql failed: duplicate key value violates unique
-  constraint "pg_type_typname_nsp_index"`）が姿を現した。
+constraint "pg_type_typname_nsp_index"`）が姿を現した。
 
   **つまり衝突点は1箇所ではなく3層に積み重なっている**:
 
@@ -108,7 +108,7 @@
     ではなく `pool.connect()` で借り切った1本のコネクション上で
     `pg_advisory_lock` / `pg_advisory_unlock` を対にして呼ぶ。
   - **待ち方とタイムアウト**: ロック取得前に `set_config('lock_timeout', ...,
-    false)`（セッションスコープ）を設定してから `pg_advisory_lock` を呼ぶ。
+false)`（セッションスコープ）を設定してから `pg_advisory_lock` を呼ぶ。
     `lock_timeout` は PostgreSQL の advisory lock 待機にも効くことを実測で
     確認済み（`SET lock_timeout='500ms'` の別セッションが約500msで
     `ERROR: canceling statement due to lock timeout`（SQLSTATE `55P03`）に
@@ -132,7 +132,7 @@
     `lock` フィールドを追加したが、既存の `applied` は残したままなので
     後方互換（`packages/postgres/src/__tests__/migrate-ledger-handover.test.ts`
     の既存の `toEqual({ applied: [...] })` は `lock: { waitedMs:
-    expect.any(Number) }` を足すだけで通った——型の破壊的変更は無い）。
+expect.any(Number) }` を足すだけで通った——型の破壊的変更は無い）。
 
 - **理由**:
 
@@ -171,7 +171,7 @@
      データベースで、非 superuser の制限ロールから呼ぶ →
      `MigrationLockUnavailableError` を投げる（歯3の時間切れとは別のエラー）。
      本物の PostgreSQL 上で、`CREATE ROLE` + `REVOKE EXECUTE ON FUNCTION
-     pg_advisory_lock(bigint) FROM PUBLIC` で作った（superuser は権限検査を
+pg_advisory_lock(bigint) FROM PUBLIC` で作った（superuser は権限検査を
      迂回するため、テスト全体の管理接続とは別の非 superuser ロールを都度作る）。
      擬似物は使っていない。
 
@@ -240,7 +240,7 @@
   `POSTGRES_PASSWORD` 付き（scram 認証）で、`CREATE ROLE ... LOGIN`
   （パスワード無し）で作ったロールへパスワード無しで繋ごうとすると、
   接続そのものが `FATAL: password authentication failed for user
-  "mnemora_lock_denied_role"` で落ちる。
+"mnemora_lock_denied_role"` で落ちる。
 
   さらに、接続文字列を組む `connectionStringFor(database, user)` が
   `url.username` だけを差し替えて `url.password` を管理ロール（`postgres`）の
@@ -255,7 +255,7 @@
 
   **直した内容**: `mnemora_lock_denied_role` を固定パスワード付きで
   `CREATE ROLE ... LOGIN PASSWORD '...'`（既存なら `ALTER ROLE ...
-  PASSWORD '...'`）で作り、`connectionStringFor` は `user` と `password` を
+PASSWORD '...'`）で作り、`connectionStringFor` は `user` と `password` を
   常に対で受け取るように変更した（`credentials?: { user, password }`）。
   `trust` 認証の手元ではパスワードは単に無視されるため、両方の環境で
   同じ経路を通る。
@@ -272,7 +272,7 @@
   歯4がまだ噛んでいる保証が要る）。scram-sha-256 環境下で変異を当てたところ、
   4本とも再び赤くなった。歯4はパスワードが正しく通るようになった分、
   `MigrationLockUnavailableError` の代わりに `permission denied for schema
-  public`（advisory lock を経ずに `CREATE TABLE` へ進んでしまい、その段で
+public`（advisory lock を経ずに `CREATE TABLE` へ進んでしまい、その段で
   ロール自身の権限不足に当たった）で失敗した——`trust` 環境で当てた変異と
   同じ形（権限剥奪では止まらず、別のエラーで失敗する）であり、歯4が
   変異を引き続き検知できることを確認した。
@@ -328,7 +328,7 @@
   - ~~**`registerEmbeddingSpace`（`packages/postgres/src/vector-space.ts`）は
     この ADR の排他の対象外のまま残した。** `CREATE TABLE IF NOT EXISTS` と
     `CREATE INDEX IF NOT EXISTS` を使っており、段階1で実証した「`CREATE TABLE
-    IF NOT EXISTS` は並行では非アトミック」という性質がそのまま当てはまる
+IF NOT EXISTS` は並行では非アトミック」という性質がそのまま当てはまる
     可能性が高い（**実測はしていない**）。`examples/chat/src/runtime-factory.ts`
     は `runMigrations()` の直後にこれを呼んでおり、複数レプリカが同時に
     起動する経路では、この呼び出しが次の衝突点として残っている。
@@ -337,8 +337,8 @@
     時間の制約でこの PR には含めなかった。**~~
     **【解決済み・ADR 0018 参照】** `registerEmbeddingSpace` についても段階1の
     実測を別途行い（まっさらな DB へ N=2/4 で同時呼び出し）、`CREATE TABLE
-    IF NOT EXISTS` 側（`pg_type_typname_nsp_index`）・`CREATE INDEX IF NOT
-    EXISTS` 側（`pg_class_relname_nsp_index`）の**両方**が決定的に衝突することを
+IF NOT EXISTS` 側（`pg_type_typname_nsp_index`）・`CREATE INDEX IF NOT
+EXISTS` 側（`pg_class_relname_nsp_index`）の**両方**が決定的に衝突することを
     確認した。この ADR と同じ advisory lock の機構（`./advisory-lock.ts` へ
     共有部品として切り出したもの）で `registerEmbeddingSpace` の呼び出し全体を
     包み、塞いだ。詳細・実測値・変異試験は

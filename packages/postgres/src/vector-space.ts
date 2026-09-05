@@ -85,7 +85,8 @@ export class RegisterEmbeddingSpaceLockUnavailableError extends AdvisoryLockUnav
 }
 
 const REGISTER_EMBEDDING_SPACE_LOCK_ERRORS = {
-  timeout: (waitedMs: number, cause: unknown) => new RegisterEmbeddingSpaceLockTimeoutError(waitedMs, cause),
+  timeout: (waitedMs: number, cause: unknown) =>
+    new RegisterEmbeddingSpaceLockTimeoutError(waitedMs, cause),
   unavailable: (cause: unknown) => new RegisterEmbeddingSpaceLockUnavailableError(cause),
 };
 
