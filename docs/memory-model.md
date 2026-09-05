@@ -611,8 +611,10 @@ CREATE TABLE memories (
 
 ```sql
 -- 抽出の冪等性: 同じ Observation に同じ版の抽出器を再実行しても重複を作らない
+-- NULLS NOT DISTINCT は必須（下の「⚠ NULLS NOT DISTINCT が要る理由」を参照）
 CREATE UNIQUE INDEX uq_memories_extraction
   ON memories (tenant_id, source_observation_id, extractor_version, content_hash)
+  NULLS NOT DISTINCT
   WHERE source_observation_id IS NOT NULL;
 
 -- recall 段1のゲート（§7）: tenant + (active|contested) + decay_floor_at の範囲スキャン
@@ -649,6 +651,29 @@ CREATE EXTENSION IF NOT EXISTS btree_gin;
 CREATE INDEX idx_memories_tags
   ON memories USING gin (tenant_id, tags);
 ```
+
+### ⚠ `NULLS NOT DISTINCT` が要る理由（2026-09 追記。実測で判明した）
+
+本書の原案は `uq_memories_extraction` に `NULLS NOT DISTINCT` を付けていなかった。
+**これは誤りである。** Postgres は既定で一意索引の NULL 同士を「異なる値」として扱う。
+`extractor_version` は NULL 許容なので、既定のままだと `extractor_version = NULL` の行に対して
+**この一意制約が発火しない。**
+
+実測（PostgreSQL 18.6）: 同じ `(tenant_id, source_observation_id, NULL, content_hash)` を
+2回挿入すると、`ON CONFLICT ... DO NOTHING` を付けていても**2行できた**
+（`extractor_version` に値が入っている場合は正しく1行に収まる）。
+
+⟹ [roadmap.md](./roadmap.md) 段階3 の完了条件「同じ Observation を二重に送っても
+Memory が重複して作られない」が、**この経路だけ静かに崩れる。**
+`NULLS NOT DISTINCT`（PostgreSQL 15 以降）は NULL を1つの値として扱い、この穴を塞ぐ。
+
+**この誤りが見つからなかった理由も記録しておく。** `packages/testkit` の適合テストは
+`extractorVersion` に値が在る場合と `source_observation_id` が NULL の場合は検査していたが、
+**「`source_observation_id` は在るが `extractor_version` が NULL」という組み合わせを
+検査していなかった。** さらに、インメモリのプレースホルダ実装は JS の文字列キーで
+NULL を空文字に潰すため**偶然に**冪等であり、Postgres 実装との食い違いが
+適合テストからは見えなかった。**分岐を数えて一本ずつ歯を通す**という規律が、
+この種の食い違いを見つける唯一の手段である。
 
 `idx_memories_recall_gate` について: `status IN ('active', 'contested')` は離散・
 低カーディナリティの partial 述語として使う（正しい使い方。2値になったが離散性は変わらない）。

@@ -94,8 +94,17 @@ CREATE TABLE memories (
 );
 
 -- 抽出の冪等性: 同じ Observation に同じ版の抽出器を再実行しても重複を作らない
+--
+-- NULLS NOT DISTINCT が要る理由（実測で判明。docs/memory-model.md §10 の原案には無かった）:
+-- Postgres は既定で一意索引の NULL 同士を「異なる値」として扱う。extractor_version は
+-- NULL 許容なので、既定のままだと extractor_version = NULL の行に対して**この一意制約が
+-- 発火しない**。実測（PG18.6）: 同じ (tenant_id, source_observation_id, NULL, content_hash)
+-- を2回挿入すると2行できた。roadmap.md 段階3 の完了条件「同じ Observation を二重に送っても
+-- Memory が重複して作られない」が、この経路だけ静かに崩れる。
+-- NULLS NOT DISTINCT は NULL を1つの値として扱い、この穴を塞ぐ（PostgreSQL 15 以降）。
 CREATE UNIQUE INDEX uq_memories_extraction
   ON memories (tenant_id, source_observation_id, extractor_version, content_hash)
+  NULLS NOT DISTINCT
   WHERE source_observation_id IS NOT NULL;
 
 -- recall 段1のゲート（docs/recall.md §3）: tenant + (active|contested) + decay_floor_at の範囲スキャン。

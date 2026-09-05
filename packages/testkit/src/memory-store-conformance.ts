@@ -205,6 +205,36 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
       expect(second.id).not.toBe(first.id);
     });
 
+    it("createMemory は extractorVersion が null でも冪等である（同じ Observation・同じ contentHash で重複を作らない）", async () => {
+      // docs/memory-model.md §10 の一意制約は
+      //   (tenant_id, source_observation_id, extractor_version, content_hash)
+      //   WHERE source_observation_id IS NOT NULL
+      // だが、Postgres は既定で NULL 同士を「異なる値」として扱うため、
+      // extractor_version が NULL だと**この一意制約が発火しない**。
+      // 実測（PG18.6）: extractor_version = NULL で同じ行を2回入れると2行できた。
+      // roadmap.md 段階3 の完了条件「同じ Observation を二重に送っても Memory が
+      // 重複して作られない」が、この経路だけ静かに崩れる。
+      // インメモリ実装は JS の文字列キーで null を "" に潰すため**偶然に**冪等であり、
+      // この分岐を検査しない限り両実装の食い違いは見えない。
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const observation = await store.createObservation(
+        ctx,
+        buildNewObservationFixture({ tenantId: "tenant-1" }),
+      );
+      const input = buildNewMemoryFixture({
+        tenantId: "tenant-1",
+        sourceObservationId: observation.id,
+        extractorVersion: null,
+        contentHash: "hash-null-extractor",
+      });
+
+      const first = await store.createMemory(ctx, input);
+      const second = await store.createMemory(ctx, input);
+
+      expect(second.id).toBe(first.id);
+    });
+
     it("createMemory は sourceObservationId が無い場合、同じ contentHash でも常に新しい Memory を作る（一意制約の対象外）", async () => {
       const store = await createStore();
       const ctx: Ctx = { tenantId: "tenant-1" };
