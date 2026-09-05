@@ -138,10 +138,16 @@ describe("マイグレーション台帳の引き継ぎ（_mnemo_migrations → 
     const pool = await createBlankDatabase(DB_NOT_REAPPLIED);
     await seedLegacyDatabase(pool);
 
-    await expect(runMigrations(pool)).resolves.toEqual({ applied: [] });
+    await expect(runMigrations(pool)).resolves.toEqual({
+      applied: [],
+      lock: { waitedMs: expect.any(Number) },
+    });
 
     // 冪等: 引き継ぎ済みの DB へもう一度走らせても同じ結果になる。
-    await expect(runMigrations(pool)).resolves.toEqual({ applied: [] });
+    await expect(runMigrations(pool)).resolves.toEqual({
+      applied: [],
+      lock: { waitedMs: expect.any(Number) },
+    });
   });
 
   // 歯2: 歯1とは別に立てる。**落ちないだけなら台帳を空にしても通ってしまう**ため、
@@ -173,12 +179,18 @@ describe("マイグレーション台帳の引き継ぎ（_mnemo_migrations → 
   it("まっさらな DB でも通る（旧名が無ければ引き継ぎは何もしない）", async () => {
     const pool = await createBlankDatabase(DB_BLANK);
 
-    await expect(runMigrations(pool)).resolves.toEqual({ applied: ["0001_init.sql"] });
+    await expect(runMigrations(pool)).resolves.toEqual({
+      applied: ["0001_init.sql"],
+      lock: { waitedMs: expect.any(Number) },
+    });
     expect(await ledgerNames(pool, "_mnemora_migrations")).toEqual(["0001_init.sql"]);
     expect(await legacyLedgerExists(pool)).toBe(false);
 
     // 二度目は何も適用しない（既存の冪等性が引き継ぎを足しても保たれている）。
-    await expect(runMigrations(pool)).resolves.toEqual({ applied: [] });
+    await expect(runMigrations(pool)).resolves.toEqual({
+      applied: [],
+      lock: { waitedMs: expect.any(Number) },
+    });
   });
 
   // 歯4: 新旧どちらも在るときは触らない。ここで RENAME してしまうと、
@@ -196,7 +208,10 @@ describe("マイグレーション台帳の引き継ぎ（_mnemo_migrations → 
     await pool.query(LEGACY_LEDGER_DDL); // 取り残された旧名の台帳を後から置く
     await pool.query("INSERT INTO _mnemo_migrations (name) VALUES ($1)", [SENTINEL_ROW]);
 
-    await expect(runMigrations(pool)).resolves.toEqual({ applied: [] });
+    await expect(runMigrations(pool)).resolves.toEqual({
+      applied: [],
+      lock: { waitedMs: expect.any(Number) },
+    });
 
     // 新名の台帳は上書きされていない（目印の行が混ざっていない）。
     expect(await ledgerNames(pool, "_mnemora_migrations")).toEqual(["0001_init.sql"]);

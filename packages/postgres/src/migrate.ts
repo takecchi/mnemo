@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 /**
  * `packages/postgres` の唯一のマイグレーション実行口（ADR 0001・docs/memory-model.md §10「規約」）。
@@ -24,6 +24,135 @@ export const DEFAULT_MIGRATIONS_DIR = join(
 
 interface AppliedMigration {
   name: string;
+}
+
+/**
+ * `runMigrations` がプロセス間排他に使う advisory lock のキー（段階2・ADR 0017）。
+ *
+ * `pg_advisory_lock` のキー空間は**データベース全体で共有**される——アプリケーションが
+ * 別の用途で同じ整数をキーに使えば干渉する（衝突しても検出できず、無関係な処理同士が
+ * 互いをブロックする）。衝突の確率を実用上無視できる水準まで下げるため、固定文字列
+ * `"mnemora:runMigrations:advisory-lock"` の SHA-256 先頭8バイトを符号付き64bit整数として
+ * 解釈した値を、**実行時に変わらない定数**としてハードコードしてある
+ * （`node -e 'const c=require("crypto");console.log(c.createHash("sha256").update("mnemora:runMigrations:advisory-lock").digest().readBigInt64BE(0).toString())'`
+ * で再計算できる。値そのものに意味は無く、衝突回避のためだけに存在する）。
+ *
+ * 値を変えると、**新旧のプロセスが違うキーで別々にロックを取り、排他が効かなくなる**
+ * ため、ローリングデプロイ中の互換性が壊れる。変える理由が生まれたら ADR を書くこと。
+ */
+export const MIGRATION_LOCK_KEY = 7190158676462701299n;
+
+/** advisory lock を待つ既定の上限。呼び出し側が options で上書きできる（テストは短くする）。 */
+export const DEFAULT_LOCK_TIMEOUT_MS = 30_000;
+
+export interface RunMigrationsOptions {
+  /** advisory lock を待つ上限（ミリ秒）。既定は {@link DEFAULT_LOCK_TIMEOUT_MS}。 */
+  lockTimeoutMs?: number;
+  /** advisory lock のキー。テスト以外で既定の {@link MIGRATION_LOCK_KEY} を変える理由は無い。 */
+  lockKey?: bigint;
+}
+
+export interface RunMigrationsResult {
+  applied: string[];
+  /**
+   * 排他の観測値。`waitedMs` は「ロックが空くまで実際に待った時間」（ミリ秒）。
+   * 他プロセスが同時にマイグレーションを行っていなければ 0 に近い値になる。
+   */
+  lock: { waitedMs: number };
+}
+
+/**
+ * advisory lock の取得が「待ち時間切れで失敗した」ことを表す。
+ *
+ * **「待った → 取れた」「待った → 時間切れ」「ロック機構自体が使えなかった」の3つを
+ * 呼び出し側が区別できること**が段階2の要求（オーナーが引いた線1）。このエラーは
+ * 2番目の状態専用——`MigrationLockUnavailableError`（3番目の状態）と混同しないこと。
+ */
+export class MigrationLockTimeoutError extends Error {
+  constructor(waitedMs: number, cause: unknown) {
+    super(
+      `runMigrations: advisory lock を ${waitedMs}ms 待ったが取得できなかった（タイムアウト）。` +
+        `他プロセスが migrate を握ったまま応答していない可能性がある。`,
+      { cause },
+    );
+    this.name = "MigrationLockTimeoutError";
+  }
+}
+
+/**
+ * advisory lock を取得する**操作自体**が失敗したことを表す（権限不足・接続不可など）。
+ *
+ * `pg_advisory_lock` を実行する権限が無いロールで接続した場合や、ロック取得中に
+ * 接続が切れた場合など、「待ったが空かなかった」（`MigrationLockTimeoutError`）とは
+ * 異なる原因で失敗したときにこちらを投げる。**この区別が無いと、権限設定の誤りを
+ * 「混んでいるだけ」と誤診してリトライし続けてしまう。**
+ */
+export class MigrationLockUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `runMigrations: advisory lock を取得する操作自体が失敗した` +
+        `（権限不足・接続不可などで、待ち時間切れとは別の原因）。`,
+      { cause },
+    );
+    this.name = "MigrationLockUnavailableError";
+  }
+}
+
+/** `pg_advisory_lock` が `lock_timeout` で中断されたときの SQLSTATE。 */
+const PG_LOCK_TIMEOUT_SQLSTATE = "55P03";
+
+/**
+ * advisory lock を取得し、保持用の専用コネクションを返す。
+ *
+ * **専用のコネクションを1本 pool から借り切って使う**（`pool.query` で都度別の
+ * コネクションを使うと、session レベルの advisory lock がどの接続に紐付いているか
+ * 制御できなくなるため）。`lock_timeout` もこのコネクションの session に対して設定する。
+ *
+ * 失敗時は必ずこのコネクションを pool へ返却してから例外を投げる
+ * （呼び出し元がコネクションリークを心配しなくてよいように）。
+ */
+async function acquireMigrationLock(
+  pool: Pool,
+  lockKey: bigint,
+  lockTimeoutMs: number,
+): Promise<{ client: PoolClient; waitedMs: number }> {
+  const client = await pool.connect();
+
+  try {
+    // SET だとプレースホルダを使えないため set_config() 経由にする
+    // （文字列結合で SQL を組み立てない）。false = セッションスコープ
+    // （このコネクションが pool へ戻った後に他の用途で再利用されても
+    // 悪影響が残らないよう、後で必ず '0' に戻す）。
+    await client.query("SELECT set_config('lock_timeout', $1, false)", [String(lockTimeoutMs)]);
+  } catch (err) {
+    client.release();
+    throw new MigrationLockUnavailableError(err);
+  }
+
+  const startedAt = Date.now();
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [lockKey.toString()]);
+  } catch (err) {
+    await client.query("SELECT set_config('lock_timeout', '0', false)").catch(() => {});
+    client.release();
+    const code = (err as { code?: string }).code;
+    if (code === PG_LOCK_TIMEOUT_SQLSTATE) {
+      throw new MigrationLockTimeoutError(Date.now() - startedAt, err);
+    }
+    throw new MigrationLockUnavailableError(err);
+  }
+
+  return { client, waitedMs: Date.now() - startedAt };
+}
+
+/** advisory lock を解放し、`lock_timeout` を元に戻してからコネクションを pool へ返す。 */
+async function releaseMigrationLock(client: PoolClient, lockKey: bigint): Promise<void> {
+  try {
+    await client.query("SELECT pg_advisory_unlock($1)", [lockKey.toString()]);
+  } finally {
+    await client.query("SELECT set_config('lock_timeout', '0', false)").catch(() => {});
+    client.release();
+  }
 }
 
 /**
@@ -81,36 +210,66 @@ function listMigrationFiles(migrationsDir: string): string[] {
  * `migrationsDir` はテスト用の差し替え口（不正なマイグレーションがロールバックされ、
  * `_mnemora_migrations` に記録されないことを検査するため）。省略時は本番の
  * `migrations/` ディレクトリを使う。
+ *
+ * ## 排他（段階2・ADR 0017）
+ *
+ * **`handOverLegacyMigrationsTable` の前から、最後のマイグレーションの COMMIT まで**を
+ * advisory lock（`MIGRATION_LOCK_KEY`）で包む。段階1の実測で、まっさらな DB へ複数
+ * プロセスが同時に `runMigrations` を呼ぶと**決定的に**（試行した全件で）どこかが
+ * 落ちることを確認している——衝突点は1箇所ではなく、`ensureMigrationsTable` の
+ * `CREATE TABLE IF NOT EXISTS`／`0001_init.sql` 冒頭の `CREATE EXTENSION IF NOT EXISTS`／
+ * 同ファイルの無印 `CREATE TABLE` の3層に積み重なっていた（詳細は ADR 0017）。
+ * 個々の DDL に `IF NOT EXISTS` を積み増す方向は採らない——症状が別の層へ移るだけで、
+ * 「並行に呼んでよい」という保証にはならないため、入り口を1つのロックで塞ぐ。
+ *
+ * **呼び出し側は何も変える必要が無い。**`runMigrations(pool)` は今まで通り安全な既定値
+ * （`lockTimeoutMs` 未指定 = {@link DEFAULT_LOCK_TIMEOUT_MS}）で動く。テストなど、
+ * 待ち時間を短くしたい場合だけ `options.lockTimeoutMs` を渡す。
+ *
+ * 起こりうる3つの状態を呼び出し側が区別できるようにしてある（オーナーが引いた線1）:
+ * - 待って取れた → 通常どおり完了し、戻り値の `lock.waitedMs` に待った時間が載る
+ * - 待ったが時間切れ → {@link MigrationLockTimeoutError} を投げる（黙って続行しない）
+ * - ロック取得の操作自体が失敗（権限不足・接続不可等） →
+ *   {@link MigrationLockUnavailableError} を投げる（時間切れと取り違えない）
  */
 export async function runMigrations(
   pool: Pool,
   migrationsDir: string = DEFAULT_MIGRATIONS_DIR,
-): Promise<{ applied: string[] }> {
-  await handOverLegacyMigrationsTable(pool);
-  await ensureMigrationsTable(pool);
+  options: RunMigrationsOptions = {},
+): Promise<RunMigrationsResult> {
+  const lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const lockKey = options.lockKey ?? MIGRATION_LOCK_KEY;
 
-  const { rows } = await pool.query<AppliedMigration>("SELECT name FROM _mnemora_migrations");
-  const alreadyApplied = new Set(rows.map((row) => row.name));
+  const { client: lockClient, waitedMs } = await acquireMigrationLock(pool, lockKey, lockTimeoutMs);
+  try {
+    await handOverLegacyMigrationsTable(pool);
+    await ensureMigrationsTable(pool);
 
-  const applied: string[] = [];
-  for (const file of listMigrationFiles(migrationsDir)) {
-    if (alreadyApplied.has(file)) {
-      continue;
+    const { rows } = await pool.query<AppliedMigration>("SELECT name FROM _mnemora_migrations");
+    const alreadyApplied = new Set(rows.map((row) => row.name));
+
+    const applied: string[] = [];
+    for (const file of listMigrationFiles(migrationsDir)) {
+      if (alreadyApplied.has(file)) {
+        continue;
+      }
+      const sql = readFileSync(join(migrationsDir, file), "utf8");
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(sql);
+        await client.query("INSERT INTO _mnemora_migrations (name) VALUES ($1)", [file]);
+        await client.query("COMMIT");
+        applied.push(file);
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw new Error(`migration ${file} failed: ${(err as Error).message}`, { cause: err });
+      } finally {
+        client.release();
+      }
     }
-    const sql = readFileSync(join(migrationsDir, file), "utf8");
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(sql);
-      await client.query("INSERT INTO _mnemora_migrations (name) VALUES ($1)", [file]);
-      await client.query("COMMIT");
-      applied.push(file);
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw new Error(`migration ${file} failed: ${(err as Error).message}`, { cause: err });
-    } finally {
-      client.release();
-    }
+    return { applied, lock: { waitedMs } };
+  } finally {
+    await releaseMigrationLock(lockClient, lockKey);
   }
-  return { applied };
 }
