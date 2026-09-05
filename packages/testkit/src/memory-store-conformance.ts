@@ -23,14 +23,17 @@ export interface MemoryStoreConformanceOptions {
  * `MemoryStore` の適合テスト（docs/architecture.md §5.1・§3.7）。
  *
  * ここでの契約は「型」ではなく「振る舞い」である。以下を実際に検査する:
- * - 2テナント分のデータを投入し、クロステナントの取得（get/getMany/countByGroup/
+ * - 2テナント分のデータを投入し、クロステナントの取得（get/getMany/aggregateScope/
  *   updateStatus/reinforce）がクロステナントとして扱われること（§3.7 必須契約）
  * - `createObservation` の冪等性（externalId の有無・一致/不一致の各分岐）
  * - `createMemory` の冪等性（§3.5、抽出キーの一致・不一致・sourceObservationId 無しの各分岐）
  * - `recordUsage` が実際に挿入が起きたときだけ `insertedMemoryIds` に載ること
  *   （D9・§3.5、全件新規/全件再送/部分再送/空配列の各分岐）
  * - `reinforce` / `updateStatus` の正常系と「対象が無い」異常系
- * - `countByGroup` の集計が実データを反映すること
+ * - `aggregateScope` の集計が実データを反映すること（群カウント・totalInScope・
+ *   status ゲート・period フィルタ・not_indexed の各分岐、roadmap.md 段階4/5・
+ *   docs/recall.md §5「スコープの外延」）
+ * - `createRecall` が recallId を発行すること（段6、ADR 0008）
  */
 export function describeMemoryStoreConformance(options: MemoryStoreConformanceOptions): void {
   const { name, createStore } = options;
@@ -60,16 +63,16 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
       expect(sameTenantRead?.id).toBe(memoryA.id);
     });
 
-    it("2テナント分のデータを投入すると、クロステナントの countByGroup は0件になる", async () => {
+    it("2テナント分のデータを投入すると、クロステナントの aggregateScope は0件になる", async () => {
       const store = await createStore();
       const ctxA: Ctx = { tenantId: "tenant-a" };
       const ctxB: Ctx = { tenantId: "tenant-b" };
 
       await store.createMemory(ctxA, buildNewMemoryFixture({ tenantId: "tenant-a" }));
 
-      const groupsB = await store.countByGroup(ctxB, {});
-      const totalB = groupsB.reduce((sum, group) => sum + group.count, 0);
-      expect(totalB).toBe(0);
+      const aggregateB = await store.aggregateScope(ctxB, {});
+      expect(aggregateB.totalInScope).toBe(0);
+      expect(aggregateB.groups).toEqual([]);
     });
 
     it("2テナント分のデータを投入すると、クロステナントの getMany は空配列になる", async () => {
@@ -513,10 +516,10 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
     });
 
     // -------------------------------------------------------------------
-    // countByGroup（docs/recall.md §5 目次帯・第3階）
+    // aggregateScope（docs/recall.md §5 目次帯・第3階・「スコープの外延」マネージャー決定）
     // -------------------------------------------------------------------
 
-    it("countByGroup は subject ごとの件数を countKind 付きで返す", async () => {
+    it("aggregateScope は subject ごとの件数を countKind 付きで返す（groups の総和 == totalInScope）", async () => {
       const store = await createStore();
       const ctx: Ctx = { tenantId: "tenant-1" };
       await store.createMemory(
@@ -532,17 +535,34 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
         buildNewMemoryFixture({ tenantId: "tenant-1", subjectId: "user-2" }),
       );
 
-      const groups = await store.countByGroup(ctx, {});
-      const byKey = new Map(groups.map((g) => [g.key, g]));
+      const aggregate = await store.aggregateScope(ctx, {});
+      const byKey = new Map(aggregate.groups.map((g) => [g.key, g]));
 
       expect(byKey.get("user-1")?.count).toBe(2);
       expect(byKey.get("user-2")?.count).toBe(1);
-      for (const group of groups) {
+      expect(aggregate.totalInScope).toBe(3);
+      const sumOfGroups = aggregate.groups.reduce((sum, g) => sum + g.count, 0);
+      expect(sumOfGroups).toBe(aggregate.totalInScope);
+      for (const group of aggregate.groups) {
         expect(["exact", "lower_bound", "unknown"]).toContain(group.countKind);
       }
     });
 
-    it("countByGroup は scope.subjectId で絞り込める", async () => {
+    it("aggregateScope は subject_id が null の群を key: null として数える（D12）", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", subjectId: null }),
+      );
+
+      const aggregate = await store.aggregateScope(ctx, {});
+      expect(aggregate.groups).toContainEqual(
+        expect.objectContaining({ axis: "subject", key: null, count: 1 }),
+      );
+    });
+
+    it("aggregateScope は scope.subjectId で絞り込める", async () => {
       const store = await createStore();
       const ctx: Ctx = { tenantId: "tenant-1" };
       await store.createMemory(
@@ -554,9 +574,125 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
         buildNewMemoryFixture({ tenantId: "tenant-1", subjectId: "user-2" }),
       );
 
-      const groups = await store.countByGroup(ctx, { subjectId: "user-1" });
-      const total = groups.reduce((sum, g) => sum + g.count, 0);
-      expect(total).toBe(1);
+      const aggregate = await store.aggregateScope(ctx, { subjectId: "user-1" });
+      expect(aggregate.totalInScope).toBe(1);
+    });
+
+    it("aggregateScope は status='archived' を totalInScope に含めず filteredArchived に計上する", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", status: "active" }),
+      );
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", status: "archived" }),
+      );
+
+      const aggregate = await store.aggregateScope(ctx, {});
+      expect(aggregate.totalInScope).toBe(1);
+      expect(aggregate.filteredArchived.count).toBe(1);
+      expect(aggregate.filteredStatus.count).toBe(0);
+    });
+
+    it("aggregateScope は status IN ('superseded','forgotten') を filteredStatus に束ねて計上する", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", status: "superseded" }),
+      );
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", status: "forgotten" }),
+      );
+
+      const aggregate = await store.aggregateScope(ctx, {});
+      expect(aggregate.totalInScope).toBe(0);
+      expect(aggregate.filteredStatus.count).toBe(2);
+      expect(aggregate.filteredArchived.count).toBe(0);
+    });
+
+    it("aggregateScope は status='contested' を totalInScope に含める（段1と同じゲート）", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", status: "contested" }),
+      );
+
+      const aggregate = await store.aggregateScope(ctx, {});
+      expect(aggregate.totalInScope).toBe(1);
+    });
+
+    it("aggregateScope は occurredAfter/occurredBefore の外にある Memory を filteredPeriod に計上し、totalInScope から除く", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({
+          tenantId: "tenant-1",
+          occurredAt: new Date("2020-01-01T00:00:00.000Z"),
+        }),
+      );
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({
+          tenantId: "tenant-1",
+          occurredAt: new Date("2026-01-01T00:00:00.000Z"),
+        }),
+      );
+
+      const aggregate = await store.aggregateScope(ctx, {
+        occurredAfter: new Date("2025-01-01T00:00:00.000Z"),
+      });
+      expect(aggregate.totalInScope).toBe(1);
+      expect(aggregate.filteredPeriod.count).toBe(1);
+    });
+
+    it("aggregateScope は embeddingStatus !== 'ready' な in-scope Memory を notIndexed に計上するが、totalInScope からは除かない", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", embeddingStatus: "pending" }),
+      );
+      await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", embeddingStatus: "ready" }),
+      );
+
+      const aggregate = await store.aggregateScope(ctx, {});
+      expect(aggregate.totalInScope).toBe(2);
+      expect(aggregate.notIndexed.count).toBe(1);
+    });
+
+    // -------------------------------------------------------------------
+    // createRecall（recall 段6「記録」。docs/recall.md §2 段6、ADR 0008）
+    // -------------------------------------------------------------------
+
+    it("createRecall は recallId を発行する", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const recallId = await store.createRecall(ctx, {
+        tenantId: "tenant-1",
+        subjectId: null,
+        query: { text: "hello" },
+        budget: null,
+        omitted: [],
+        usage: {
+          chars: 0,
+          estimatedTokens: 0,
+          counter: "heuristic",
+          byTier: { full: 0, digest: 0, index: 0 },
+        },
+        indexBand: { groups: [], totalInScope: 0, countKind: "exact" },
+        explain: { stages: [] },
+        returnedMemoryIds: [],
+      });
+      expect(typeof recallId).toBe("string");
+      expect(recallId.length).toBeGreaterThan(0);
     });
   });
 }
