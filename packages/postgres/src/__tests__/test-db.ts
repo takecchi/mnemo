@@ -80,3 +80,24 @@ export async function closeTestClient(): Promise<void> {
     ready = undefined;
   }
 }
+
+/**
+ * 決定的な擬似乱数（テストのベクトル生成用）。
+ *
+ * **`Math.random()` を使わない理由**: HNSW 索引が選ばれるか・ANN が何を返すかは
+ * データ分布に依存する。入力が実行のたびに変わると、**落ちたときに再現できない**
+ * ——実際に「一度だけ観測したが再現しない」flake の報告が出て、原因を追えなかった。
+ * 種を固定すれば、落ちたときに必ず同じ入力で再現できる。
+ *
+ * mulberry32。テスト用途に十分な質があり、実装が短く依存を増やさない。
+ */
+export function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}

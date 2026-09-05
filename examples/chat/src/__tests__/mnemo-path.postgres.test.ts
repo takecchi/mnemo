@@ -71,6 +71,48 @@ describe("examples/chat: observe → recall の往復（本物の Postgres）", 
       await handle.close();
     }
   });
+
+  /**
+   * ⭐ 北極星の物差しに直接効く歯。
+   *
+   * `compare` が示す「642ターンで naive の 1.9%」という削減率は、**それだけでは意味を持たない。**
+   * 何も返さなければ削減率は 0% になる。削減が意味を持つのは、
+   * **呼び出し側が探している答えが、削られた後にも残っている**場合だけである。
+   * ——「使う側が、会話ログを全部プロンプトへ積むのをやめられたか」という物差しは、
+   * 積むのをやめても答えが得られることを含意している。
+   *
+   * この歯は、会話が長くなって `recall()` が既定 `limit` で大幅に絞り込むようになっても、
+   * 冒頭で一度だけ表明された事実（`FACT_STATEMENT`）が返り値に残ることを検査する。
+   *
+   * **⚠ この歯が主張しないこと**: 擬似 embedding は意味的な類似度を持たないため、
+   * これは「意味的に関連する記憶が正しく上位に来る」ことの証明ではない。
+   * 主張しているのは、**この決定的なシナリオにおいて、量を1桁以上削っても
+   * 目的の記憶が落ちない**ということだけである（README「この実測の限界」参照）。
+   */
+  it("会話が長くなって大幅に絞り込まれても、冒頭で表明された事実は返り値に残る", async () => {
+    await resetTestDatabase();
+    await getTestClient();
+    const handle = await createExampleRuntime(requireDatabaseUrl(), {});
+    try {
+      const ctx: Ctx = { tenantId: "example-chat-fact-survives" };
+      // filler 80組 = 162ターン。user 発話 81件に対し、既定 limit は 10 件。
+      const conversation = buildConversation(80);
+      await ingestConversation(handle.runtime, ctx, conversation);
+      const result = await queryRecall(handle.runtime, ctx, conversation);
+
+      // 前提: 実際に大幅な絞り込みが起きていること。
+      // （絞り込みが起きていなければ「残った」ことに意味が無い——
+      //   この2行が無いと、limit が緩んだ瞬間にこの歯は無意味な緑になる。）
+      expect(result.index.totalInScope).toBe(conversation.userUtterances.length);
+      expect(result.memories.length).toBeLessThan(result.index.totalInScope / 4);
+
+      // 本題: 絞り込まれた後にも、冒頭の事実が残っている。
+      const digests = result.memories.map((m) => m.digest);
+      expect(digests.some((d) => d.includes("青"))).toBe(true);
+    } finally {
+      await handle.close();
+    }
+  });
 });
 
 afterAll(async () => {
