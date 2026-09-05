@@ -49,6 +49,25 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13))
 
+  packages/openai:
+    dependencies:
+      '@mnemo/core':
+        specifier: workspace:*
+        version: link:../core
+      openai:
+        specifier: 7.10.0
+        version: 7.10.0(zod@4.5.4)
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13))
+
   packages/postgres:
     dependencies:
       '@mnemo/core':
@@ -928,6 +947,30 @@ packages:
   obug@2.1.4:
     resolution: {integrity: sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==}
     engines: {node: '>=12.20.0'}
+
+  openai@7.10.0:
+    resolution: {integrity: sha512-sn9t2Kls7O52PwuF9BUTYNu4Gk/r0lXJyrgaNht4TNRlZFb3dJIGO0RciSgjARGCBRtWjySubAQFJttlzUvGQQ==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      undici: '>=5 <9'
+      ws: ^8.21.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      undici:
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -1845,6 +1888,10 @@ snapshots:
   natural-compare@1.4.0: {}
 
   obug@2.1.4: {}
+
+  openai@7.10.0(zod@4.5.4):
+    optionalDependencies:
+      zod: 4.5.4
 
   optionator@0.9.4:
     dependencies:

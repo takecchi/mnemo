@@ -7,6 +7,8 @@ import type {
   MemoryEventKind,
   MemoryStatus,
   Observation,
+  OutboxJobKind,
+  OutboxJobRecord,
   Provenance,
 } from "@mnemo/core";
 
@@ -44,6 +46,22 @@ export function parsePgTimestamp(value: string | null): Date | null {
     normalized = normalized.slice(0, normalized.length - tz[0].length) + `${sign}:${minutes}`;
   }
   return new Date(normalized);
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * core の id 型（`ObservationId` / `MemoryId` 等）は単なる `string` であり、UUID 形式を
+ * 強制しない。しかし `packages/postgres` の各テーブルの主キーは `uuid` 型のため、
+ * 呼び出し側が任意の文字列（例: 存在確認のための `"does-not-exist"`）を渡すと、
+ * Postgres がクエリ実行時点で `invalid input syntax for type uuid` を投げてしまう
+ * ——「存在しない」と「壊れた入力」を区別せずに済ませたい箇所（`getObservation` が
+ * null を返す契約、`OutboxStore.complete`/`fail` がべき等に成功する契約）では、
+ * この形式チェックで**クエリを投げる前に**判定し、DB 由来のエラーメッセージを
+ * 呼び出し側に漏らさない（roadmap.md 段階3 で実 DB 検査により判明した不整合の修正）。
+ */
+export function isUuidLike(value: string): boolean {
+  return UUID_PATTERN.test(value);
 }
 
 export interface MemoryRow {
@@ -147,5 +165,37 @@ export function rowToMemoryEvent(row: MemoryEventRow): MemoryEvent {
     digestSnapshot: row.digest_snapshot,
     sizeBeforeBytes: row.size_before_bytes,
     meta: row.meta,
+  };
+}
+
+export interface OutboxJobRow {
+  id: string;
+  tenant_id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  available_at: string;
+  claimed_at: string | null;
+  claimed_by: string | null;
+  attempts: number;
+  completed_at: string | null;
+  failed_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export function rowToOutboxJob(row: OutboxJobRow): OutboxJobRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    kind: row.kind as OutboxJobKind,
+    payload: row.payload,
+    availableAt: parsePgTimestamp(row.available_at),
+    claimedAt: parsePgTimestamp(row.claimed_at),
+    claimedBy: row.claimed_by,
+    attempts: row.attempts,
+    completedAt: parsePgTimestamp(row.completed_at),
+    failedAt: parsePgTimestamp(row.failed_at),
+    lastError: row.last_error,
+    createdAt: parsePgTimestamp(row.created_at),
   };
 }

@@ -4,12 +4,17 @@ import type { Ctx } from "@mnemo/core";
 import {
   describeEventStoreConformance,
   describeMemoryStoreConformance,
+  describeOutboxStoreConformance,
+  describeTenantSettingsStoreConformance,
   describeVectorStoreConformance,
 } from "@mnemo/testkit";
 import { buildNewMemoryFixture } from "@mnemo/testkit";
 import { PostgresMemoryStore } from "../memory-store.js";
 import { PostgresVectorStore } from "../vector-store.js";
 import { PostgresEventStore } from "../event-store.js";
+import { PostgresOutboxStore } from "../outbox-store.js";
+import { PostgresTenantSettingsStore } from "../tenant-settings-store.js";
+import { rowToOutboxJob, type OutboxJobRow } from "../mapping.js";
 import { closeTestClient, getTestClient, resetTestDatabase } from "./test-db.js";
 
 /**
@@ -66,6 +71,49 @@ describeVectorStoreConformance({
     const store = new PostgresMemoryStore(db);
     const memory = await store.createMemory(ctx, buildNewMemoryFixture({ tenantId: ctx.tenantId }));
     return memory.id;
+  },
+});
+
+describeOutboxStoreConformance({
+  name: "postgres",
+  createStore: async () => {
+    await resetTestDatabase();
+    const { db } = await getTestClient();
+    return new PostgresOutboxStore(db);
+  },
+  seedJob: async (ctx: Ctx, input) => {
+    const { db } = await getTestClient();
+    const result = await db.execute(sql`
+      INSERT INTO outbox (id, tenant_id, kind, payload, available_at, attempts, created_at)
+      VALUES (
+        gen_random_uuid(),
+        ${ctx.tenantId},
+        ${input.kind},
+        ${JSON.stringify(input.payload ?? {})}::jsonb,
+        ${input.availableAt ?? new Date()},
+        0,
+        now()
+      )
+      RETURNING *
+    `);
+    return rowToOutboxJob(result.rows[0] as unknown as OutboxJobRow);
+  },
+});
+
+describeTenantSettingsStoreConformance({
+  name: "postgres",
+  createStore: async () => {
+    await resetTestDatabase();
+    const { db } = await getTestClient();
+    return new PostgresTenantSettingsStore(db);
+  },
+  setDefaultHalfLifeHours: async (ctx: Ctx, hours: number) => {
+    const { db } = await getTestClient();
+    await db.execute(sql`
+      INSERT INTO tenant_settings (tenant_id, default_half_life_hours, taxonomy_mode, created_at, updated_at)
+      VALUES (${ctx.tenantId}, ${hours}, 'open', now(), now())
+      ON CONFLICT (tenant_id) DO UPDATE SET default_half_life_hours = EXCLUDED.default_half_life_hours
+    `);
   },
 });
 
