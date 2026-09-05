@@ -25,13 +25,14 @@ export interface ExampleRuntimeHandle {
  * サンプルアプリの `Runtime` を組み立てる（roadmap.md 段階7）。
  *
  * - `packages/postgres` に対してマイグレーションと埋め込み空間登録を行う。
- *   `runMigrations` は advisory lock でプロセス間排他される（ADR 0017）ため、複数の
- *   レプリカが同時にこの関数を呼んでも安全——**「`IF NOT EXISTS` 系だから安全」ではない**
- *   （段階1の実測で `0001_init.sql` の無印 `CREATE TABLE` に加え、`CREATE TABLE
- *   IF NOT EXISTS` 自体も並行では非アトミックなことを確認済み。ADR 0017 参照）。
- *   一方 `registerEmbeddingSpace` はまだこの排他の対象外——**複数レプリカが同時に
- *   起動する経路では、この呼び出しが次の衝突点として残っている**（ADR 0017 の
- *   「残った課題」）。
+ *   `runMigrations`（ADR 0017）・`registerEmbeddingSpace`（ADR 0018）は**どちらも**
+ *   advisory lock でプロセス間排他される——複数のレプリカが同時にこの関数を呼んでも安全。
+ *   **「`IF NOT EXISTS` 系だから安全」ではない**（段階1の実測で、`CREATE TABLE
+ *   IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` はいずれも並行では非アトミックで、
+ *   複数プロセスが同時に呼ぶと決定的にどちらか一方が落ちることを確認済み。
+ *   `runMigrations` は ADR 0017、`registerEmbeddingSpace` は ADR 0018 を参照）。
+ *   2つの関数は別々の advisory lock キーを使う（`MIGRATION_LOCK_KEY` /
+ *   `REGISTER_EMBEDDING_SPACE_LOCK_KEY`）ため、互いをブロックしない。
  * - `packages/testkit` の擬似 provider か、本物の `packages/openai` かは
  *   `createProviders`（`OPENAI_API_KEY` の有無）が決める。
  */

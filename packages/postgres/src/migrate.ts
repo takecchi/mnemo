@@ -2,6 +2,13 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool, PoolClient } from "pg";
+import {
+  AdvisoryLockTimeoutError,
+  AdvisoryLockUnavailableError,
+  DEFAULT_LOCK_TIMEOUT_MS,
+  acquireAdvisoryLock,
+  releaseAdvisoryLock,
+} from "./advisory-lock.js";
 
 /**
  * `packages/postgres` の唯一のマイグレーション実行口（ADR 0001・docs/memory-model.md §10「規約」）。
@@ -42,9 +49,6 @@ interface AppliedMigration {
  */
 export const MIGRATION_LOCK_KEY = 7190158676462701299n;
 
-/** advisory lock を待つ既定の上限。呼び出し側が options で上書きできる（テストは短くする）。 */
-export const DEFAULT_LOCK_TIMEOUT_MS = 30_000;
-
 export interface RunMigrationsOptions {
   /** advisory lock を待つ上限（ミリ秒）。既定は {@link DEFAULT_LOCK_TIMEOUT_MS}。 */
   lockTimeoutMs?: number;
@@ -67,13 +71,18 @@ export interface RunMigrationsResult {
  * **「待った → 取れた」「待った → 時間切れ」「ロック機構自体が使えなかった」の3つを
  * 呼び出し側が区別できること**が段階2の要求（オーナーが引いた線1）。このエラーは
  * 2番目の状態専用——`MigrationLockUnavailableError`（3番目の状態）と混同しないこと。
+ *
+ * 機構そのもの（`AdvisoryLockTimeoutError`）は `./advisory-lock.ts` へ切り出した
+ * （段階2・ADR 0018、`registerEmbeddingSpace` と共有するため）。ここではメッセージに
+ * `runMigrations:` を埋め込んだサブクラスとして残す——既存の `instanceof
+ * MigrationLockTimeoutError` 検査とメッセージ文言を壊さないため。
  */
-export class MigrationLockTimeoutError extends Error {
+export class MigrationLockTimeoutError extends AdvisoryLockTimeoutError {
   constructor(waitedMs: number, cause: unknown) {
     super(
       `runMigrations: advisory lock を ${waitedMs}ms 待ったが取得できなかった（タイムアウト）。` +
         `他プロセスが migrate を握ったまま応答していない可能性がある。`,
-      { cause },
+      cause,
     );
     this.name = "MigrationLockTimeoutError";
   }
@@ -86,73 +95,38 @@ export class MigrationLockTimeoutError extends Error {
  * 接続が切れた場合など、「待ったが空かなかった」（`MigrationLockTimeoutError`）とは
  * 異なる原因で失敗したときにこちらを投げる。**この区別が無いと、権限設定の誤りを
  * 「混んでいるだけ」と誤診してリトライし続けてしまう。**
+ *
+ * `AdvisoryLockUnavailableError`（`./advisory-lock.ts`）のサブクラス。理由は
+ * `MigrationLockTimeoutError` と同じ。
  */
-export class MigrationLockUnavailableError extends Error {
+export class MigrationLockUnavailableError extends AdvisoryLockUnavailableError {
   constructor(cause: unknown) {
     super(
       `runMigrations: advisory lock を取得する操作自体が失敗した` +
         `（権限不足・接続不可などで、待ち時間切れとは別の原因）。`,
-      { cause },
+      cause,
     );
     this.name = "MigrationLockUnavailableError";
   }
 }
 
-/** `pg_advisory_lock` が `lock_timeout` で中断されたときの SQLSTATE。 */
-const PG_LOCK_TIMEOUT_SQLSTATE = "55P03";
+const MIGRATION_LOCK_ERRORS = {
+  timeout: (waitedMs: number, cause: unknown) => new MigrationLockTimeoutError(waitedMs, cause),
+  unavailable: (cause: unknown) => new MigrationLockUnavailableError(cause),
+};
 
-/**
- * advisory lock を取得し、保持用の専用コネクションを返す。
- *
- * **専用のコネクションを1本 pool から借り切って使う**（`pool.query` で都度別の
- * コネクションを使うと、session レベルの advisory lock がどの接続に紐付いているか
- * 制御できなくなるため）。`lock_timeout` もこのコネクションの session に対して設定する。
- *
- * 失敗時は必ずこのコネクションを pool へ返却してから例外を投げる
- * （呼び出し元がコネクションリークを心配しなくてよいように）。
- */
+/** `./advisory-lock.ts` の共通実装を、`runMigrations` 用のエラークラスで包んだだけの薄い口。 */
 async function acquireMigrationLock(
   pool: Pool,
   lockKey: bigint,
   lockTimeoutMs: number,
 ): Promise<{ client: PoolClient; waitedMs: number }> {
-  const client = await pool.connect();
-
-  try {
-    // SET だとプレースホルダを使えないため set_config() 経由にする
-    // （文字列結合で SQL を組み立てない）。false = セッションスコープ
-    // （このコネクションが pool へ戻った後に他の用途で再利用されても
-    // 悪影響が残らないよう、後で必ず '0' に戻す）。
-    await client.query("SELECT set_config('lock_timeout', $1, false)", [String(lockTimeoutMs)]);
-  } catch (err) {
-    client.release();
-    throw new MigrationLockUnavailableError(err);
-  }
-
-  const startedAt = Date.now();
-  try {
-    await client.query("SELECT pg_advisory_lock($1)", [lockKey.toString()]);
-  } catch (err) {
-    await client.query("SELECT set_config('lock_timeout', '0', false)").catch(() => {});
-    client.release();
-    const code = (err as { code?: string }).code;
-    if (code === PG_LOCK_TIMEOUT_SQLSTATE) {
-      throw new MigrationLockTimeoutError(Date.now() - startedAt, err);
-    }
-    throw new MigrationLockUnavailableError(err);
-  }
-
-  return { client, waitedMs: Date.now() - startedAt };
+  return acquireAdvisoryLock(pool, lockKey, lockTimeoutMs, MIGRATION_LOCK_ERRORS);
 }
 
-/** advisory lock を解放し、`lock_timeout` を元に戻してからコネクションを pool へ返す。 */
+/** `./advisory-lock.ts` の共通実装をそのまま呼ぶだけの薄い口（対称性のため関数名だけ残す）。 */
 async function releaseMigrationLock(client: PoolClient, lockKey: bigint): Promise<void> {
-  try {
-    await client.query("SELECT pg_advisory_unlock($1)", [lockKey.toString()]);
-  } finally {
-    await client.query("SELECT set_config('lock_timeout', '0', false)").catch(() => {});
-    client.release();
-  }
+  return releaseAdvisoryLock(client, lockKey);
 }
 
 /**

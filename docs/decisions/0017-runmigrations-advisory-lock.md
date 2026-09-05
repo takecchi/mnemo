@@ -325,7 +325,7 @@
     ファイルの内容に依存せず `runMigrations()` の入り口全体を排他するため、
     **この対策自体はファイル数に依存せず有効なはず**——「はず」であり、
     実測してはいない。
-  - **`registerEmbeddingSpace`（`packages/postgres/src/vector-space.ts`）は
+  - ~~**`registerEmbeddingSpace`（`packages/postgres/src/vector-space.ts`）は
     この ADR の排他の対象外のまま残した。** `CREATE TABLE IF NOT EXISTS` と
     `CREATE INDEX IF NOT EXISTS` を使っており、段階1で実証した「`CREATE TABLE
     IF NOT EXISTS` は並行では非アトミック」という性質がそのまま当てはまる
@@ -334,7 +334,17 @@
     起動する経路では、この呼び出しが次の衝突点として残っている。
     優先順位（段階2の本体である advisory lock の実装・歯・変異試験 > この
     ADR・門を通すこと > `registerEmbeddingSpace` の同種対応）に従い、
-    時間の制約でこの PR には含めなかった。
+    時間の制約でこの PR には含めなかった。**~~
+    **【解決済み・ADR 0018 参照】** `registerEmbeddingSpace` についても段階1の
+    実測を別途行い（まっさらな DB へ N=2/4 で同時呼び出し）、`CREATE TABLE
+    IF NOT EXISTS` 側（`pg_type_typname_nsp_index`）・`CREATE INDEX IF NOT
+    EXISTS` 側（`pg_class_relname_nsp_index`）の**両方**が決定的に衝突することを
+    確認した。この ADR と同じ advisory lock の機構（`./advisory-lock.ts` へ
+    共有部品として切り出したもの）で `registerEmbeddingSpace` の呼び出し全体を
+    包み、塞いだ。詳細・実測値・変異試験は
+    [ADR 0018](./0018-register-embedding-space-advisory-lock.md) を参照。
+    上の取り消し線の部分は、当時（この ADR 採用時点）に「残った課題」として
+    書いた記録そのものであり、書き換えずに残してある。
   - **advisory lock を取得する専用コネクションが、pool の他の接続と比べて
     極端に不健全な状態（TCP レベルで応答不能など）に陥ったときの挙動**は
     実測していない（`pg_advisory_unlock` が呼べないまま `client.release()`
