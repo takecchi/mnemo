@@ -31,3 +31,4 @@ alteroid (github.com/takecchi/alteroid) を根拠として引く箇所は、確�
 | [0016](./0016-db-test-gate-explicit-exclusion.md)         | DB テストの排他は依存グラフに頼らず、門のコード自身に載せる      | 採用 (2026-09) |
 | [0017](./0017-runmigrations-advisory-lock.md)             | `runMigrations()` を advisory lock でプロセス間排他する          | 採用 (2026-09) |
 | [0018](./0018-register-embedding-space-advisory-lock.md)  | `registerEmbeddingSpace()` を advisory lock でプロセス間排他する | 採用 (2026-09) |
+| [0019](./0019-real-openai-measurement-cost.md)             | 本物の OpenAI で北極星の物差しを測る — 費用・実測値・分かったこと | 採用 (2026-09) |
