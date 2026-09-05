@@ -86,8 +86,8 @@ export async function runMigrations(
   pool: Pool,
   migrationsDir: string = DEFAULT_MIGRATIONS_DIR,
 ): Promise<{ applied: string[] }> {
-  await handOverLegacyMigrationsTable(pool);
   await ensureMigrationsTable(pool);
+  await handOverLegacyMigrationsTable(pool);
 
   const { rows } = await pool.query<AppliedMigration>("SELECT name FROM _mnemora_migrations");
   const alreadyApplied = new Set(rows.map((row) => row.name));
