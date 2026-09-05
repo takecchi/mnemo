@@ -82,6 +82,41 @@
   - 門の歯（`scripts/__tests__/run-db-tests.test.mjs`）は、**本物の門を子プロセスとして
     起動する**。擬似の実行器に差し替えると「門が本当に DB テストを呼ぶか」を
     測れなくなるためだが、代償として歯の実行に十数秒かかる。
+  - `.github/workflows/ci.yml` に `root-gate-db-stage` ジョブを追加した。
+    pgvector の service container を持ち、`DATABASE_URL` を設定した状態で
+    `node scripts/run-db-tests.mjs`（ルートの門の DB 段そのもの）を直接実行し、
+    出力に「DB テストを実行します」と「✔ DB テストも実行し、通りました。」が
+    両方出ること・「DB テストは実行していません」が出ないことを検査する。
+    既存の `postgres` / `example-chat` ジョブ（`test:db` を各パッケージへ直接呼ぶ、
+    DB テストそのものの合否を測るジョブ）は置き換えていない。新設したのは、
+    それとは別の「ルートの門の DB 段が、DATABASE_URL 在りで実際に走って緑になるか」
+    という、この ADR を書いた時点で「確かめていないこと」に挙げていた穴
+    （順方向に永続的な自動の歯が無い・CI で DATABASE_URL を設定してこの段を
+    通した実測が無い）を塞ぐための実測である。
+    既存ジョブへ段を足すのではなく並列の別ジョブにしたのは、`postgres` job
+    （直列に足すと今のボトルネックへそのまま積み増しになる）を避け、
+    壁時計上の増分を既存ジョブの所要時間の範囲に収めるため
+    （実測値は PR 本文を参照）。
+    **このジョブが実際に緑になることは確認した**——PR #11 の
+    [run 33968059262](https://github.com/takecchi/mnemora/actions/runs/33968059262)。
+    出力に「DATABASE_URL が設定されているため、DB テストを実行します」と
+    「✔ DB テストも実行し、通りました。」が両方出て、それを `grep` が拾って緑になっている。
+    所要は 2 回の run で 1 分 36 秒 / 1 分 43 秒、同じ run の `postgres` ジョブは
+    1 分 38 秒 / 1 分 33 秒——**ほぼ同着で、2 回目ではこのジョブが最長になった。**
+    ジョブは並列に走るので、**壁時計の増分は 0〜十数秒**にとどまる（延べの
+    runner 時間は 1 回あたり約 1 分 40 秒増える。既存の 2 ジョブが走らせている
+    `test:db` を、この段を経由してもう一度走らせるため）。
+  - **この段の「DB 在りで緑」は、本物の PostgreSQL に対して実測した。**
+    CI の service container（`pgvector/pgvector:pg17`）と、手元の
+    PostgreSQL 18.6 + pgvector 0.8.6 の両方で、`DATABASE_URL` 在りの
+    ルートの門が緑になることを確認している（PR #11）。
+    PR #10 の時点では PGlite（WASM 実装）でしか測れていなかった——
+    作業環境に docker も postgres も root 権限も無かったため。
+    **PGlite で代用する場合の差は残る**: pgvector・HNSW・`EXPLAIN` を含め
+    `packages/postgres` の 90 本中 86 本は通るが、
+    `migrate-ledger-handover.test.ts` の 4 本は落ちる——PGlite が
+    `CREATE DATABASE` を実質 no-op として扱い、独立した使い捨て DB を
+    作れないためである。
 
 - **これが覆るとしたら**:
 
@@ -95,17 +130,9 @@
 
 - **確かめていないこと**:
 
-  - 「`DATABASE_URL` が在って DB テストが全部通るときに門が緑である」ことに、
-    **永続的な自動の歯は無い**。CI の `postgres` / `example-chat` ジョブは
-    `test:db` を直接呼ぶため、この段を経由しない。
-    逆向き（DB 段が呼ばれなくなる・落ちても赤くならない）は歯が押さえている。
-  - CI 上でこの段が走ること自体は確認した（PR #10 の
-    `typecheck / lint / test / build` ジョブに「DB テストは実行していません」の
-    告知が出て、ジョブは緑）。ただし**CI 上で `DATABASE_URL` を設定して
-    この段を通した実測は無い**——前項と同じ穴である。
-  - **この段の「DB 在りで緑」を実測した DB は、本物の PostgreSQL ではなく
-    PGlite（WASM 実装）である。**作業環境に docker も postgres も root 権限も
-    無かったため。pgvector・HNSW・`EXPLAIN` を含め `packages/postgres` の
-    90 本中 86 本が通ったが、`migrate-ledger-handover.test.ts` の 4 本は
-    PGlite が `CREATE DATABASE` を実質 no-op として扱う（独立した使い捨て DB を
-    作れない）ため落ちる。本物の PostgreSQL に対する CI では、この 4 本も通っている。
+  - **順方向を押さえているのは、歯ではなく CI ジョブである。**手元の門で
+    「`DATABASE_URL` 在りでこの段が緑になる」ことを常に測る歯は、いまも無い——
+    手元では `DATABASE_URL` を設定して回した者だけがそれを見る。
+    逆向き（DB 段が呼ばれなくなる・落ちても赤くならない）と、ルートの `test` が
+    この段を呼ぶ配線は、引き続き `scripts/__tests__/run-db-tests.test.mjs` の歯が
+    押さえている。

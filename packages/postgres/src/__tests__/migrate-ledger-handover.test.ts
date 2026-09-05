@@ -183,6 +183,13 @@ describe("マイグレーション台帳の引き継ぎ（_mnemo_migrations → 
 
   // 歯4: 新旧どちらも在るときは触らない。ここで RENAME してしまうと、
   // 生きている台帳を古い台帳で上書きすることになる。
+  //
+  // **この歯が噛むことは実測してある（PR #11）。**`handOverLegacyMigrationsTable` の
+  // 条件から `AND to_regclass('_mnemora_migrations') IS NULL` を落とす変異
+  // （＝旧名が在れば常に RENAME する）を当てると、
+  // `relation "_mnemora_migrations" already exists` でこの1本だけが赤くなり、
+  // 他の3本は緑のままだった——本物の PostgreSQL 18.6 + pgvector 0.8.6 に対する観測である。
+  // PR #8 で当てた変異（引き継ぎと台帳作成の順序入れ替え）では、この歯は緑のままだった。
   it("新旧どちらの台帳も在るときは、引き継ぎは何もしない", async () => {
     const pool = await createBlankDatabase(DB_BOTH_PRESENT);
     await runMigrations(pool); // 新名の台帳ができる
