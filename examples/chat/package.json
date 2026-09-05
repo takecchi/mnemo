@@ -9,13 +9,15 @@
     "typecheck": "tsc -p tsconfig.json",
     "test:db": "vitest run",
     "chat": "tsx src/cli.ts chat",
-    "compare": "tsx src/cli.ts compare"
+    "compare": "tsx src/cli.ts compare",
+    "retrieval": "tsx src/cli.ts retrieval"
   },
   "dependencies": {
     "@mnemora/core": "workspace:*",
     "@mnemora/openai": "workspace:*",
     "@mnemora/postgres": "workspace:*",
-    "@mnemora/testkit": "workspace:*"
+    "@mnemora/testkit": "workspace:*",
+    "openai": "7.10.0"
   },
   "devDependencies": {
     "tsx": "4.23.13",

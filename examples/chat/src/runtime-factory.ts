@@ -14,10 +14,23 @@ import {
 } from "@mnemora/postgres";
 import type { EnvLike, ProviderMode } from "./providers.js";
 import { createProviders } from "./providers.js";
+import type { UsageMeter } from "./usage-meter.js";
 
 export interface ExampleRuntimeHandle {
   runtime: Runtime;
+  /** 後方互換のために残す単一ラベル（`providers.ts` の `Providers.mode` と同じ注記）。 */
   mode: ProviderMode;
+  llmMode: ProviderMode;
+  embeddingMode: ProviderMode;
+  /** `llmMode`/`embeddingMode` のどちらかが `"openai"` のときだけ存在する。 */
+  usageMeter?: UsageMeter;
+  /**
+   * retrieval-quality（PR 本文 (D)）が memory → observation の系譜を辿るために公開する。
+   * `packages/core`/`packages/postgres` は変更していない——`MemoryStore` は元から
+   * 公開 interface であり（`get`/`getObservation` は roadmap.md 段階3から存在する）、
+   * これまで `createExampleRuntime` の返り値に含めていなかっただけ。
+   */
+  memoryStore: PostgresMemoryStore;
   close(): Promise<void>;
 }
 
@@ -43,11 +56,13 @@ export async function createExampleRuntime(
   const client = createPostgresClient(databaseUrl);
   await runMigrations(client.pool);
 
-  const { llmProvider, embeddingProvider, mode } = createProviders(env);
+  const { llmProvider, embeddingProvider, mode, llmMode, embeddingMode, usageMeter } =
+    createProviders(env);
   await registerEmbeddingSpace(client.pool, embeddingProvider.space);
 
+  const memoryStore = new PostgresMemoryStore(client.db);
   const runtime = createRuntime({
-    memoryStore: new PostgresMemoryStore(client.db),
+    memoryStore,
     outboxStore: new PostgresOutboxStore(client.db),
     vectorStore: new PostgresVectorStore(client.db),
     eventStore: new PostgresEventStore(client.db),
@@ -60,6 +75,10 @@ export async function createExampleRuntime(
   return {
     runtime,
     mode,
+    llmMode,
+    embeddingMode,
+    ...(usageMeter !== undefined ? { usageMeter } : {}),
+    memoryStore,
     close: () => closePostgresClient(client),
   };
 }
