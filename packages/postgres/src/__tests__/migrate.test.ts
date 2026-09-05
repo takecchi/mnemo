@@ -9,7 +9,7 @@ import { closeTestClient, getTestClient } from "./test-db.js";
  * `runMigrations`（`packages/postgres` の唯一のマイグレーション実行口、ADR 0001）の
  * 分岐を検査する。
  * - 既に適用済みのマイグレーションは再適用されない（`applied` が空になる）。
- * - 失敗したマイグレーションはロールバックされ、`_mnemo_migrations` に記録が残らない
+ * - 失敗したマイグレーションはロールバックされ、`_mnemora_migrations` に記録が残らない
  *   （中途半端な適用済み扱いにしない）。
  */
 describe("runMigrations", () => {
@@ -33,7 +33,7 @@ describe("runMigrations", () => {
 
     await expect(runMigrations(pool, dir)).rejects.toThrow(/9001_broken\.sql/);
 
-    const recorded = await pool.query("SELECT name FROM _mnemo_migrations WHERE name = $1", [
+    const recorded = await pool.query("SELECT name FROM _mnemora_migrations WHERE name = $1", [
       "9001_broken.sql",
     ]);
     expect(recorded.rows).toEqual([]);
@@ -58,7 +58,7 @@ describe("runMigrations", () => {
     expect(second.applied).toEqual([]);
 
     // 後始末: このテスト専用の記録を消す（他テストの「全て適用済み」判定を汚さないため）。
-    await pool.query("DELETE FROM _mnemo_migrations WHERE name IN ($1, $2)", [
+    await pool.query("DELETE FROM _mnemora_migrations WHERE name IN ($1, $2)", [
       "0001_noop_a.sql",
       "0002_noop_b.sql",
     ]);
