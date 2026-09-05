@@ -2,11 +2,16 @@
 // 「testkit の適合テストの雛形（2テナント分のデータを入れて走らせる枠組み）が、
 //   プレースホルダ実装に対して動く」
 
+import type { Ctx } from "@mnemo/core";
 import { describeEventStoreConformance } from "../event-store-conformance.js";
 import { describeMemoryStoreConformance } from "../memory-store-conformance.js";
+import { describeOutboxStoreConformance } from "../outbox-store-conformance.js";
+import { describeTenantSettingsStoreConformance } from "../tenant-settings-store-conformance.js";
 import { describeVectorStoreConformance } from "../vector-store-conformance.js";
 import { InMemoryEventStore } from "../__fixtures__/in-memory-event-store.js";
 import { InMemoryMemoryStore } from "../__fixtures__/in-memory-memory-store.js";
+import { InMemoryOutboxStore } from "../__fixtures__/in-memory-outbox-store.js";
+import { InMemoryTenantSettingsStore } from "../__fixtures__/in-memory-tenant-settings-store.js";
 import { InMemoryVectorStore } from "../__fixtures__/in-memory-vector-store.js";
 
 describeMemoryStoreConformance({
@@ -22,4 +27,57 @@ describeVectorStoreConformance({
 describeEventStoreConformance({
   name: "in-memory placeholder",
   createStore: () => new InMemoryEventStore(),
+});
+
+// `describeOutboxStoreConformance` の各 `it()` は必ず `createStore()` を先に呼ぶ
+// （outbox-store-conformance.ts の全ケースがそうなっている）。in-memory 実装では
+// `seedJob` が「OutboxStore 単体には無い enqueue」を `MemoryStore` 経由で代行する必要があり、
+// `createStore()` が最後に作った `MemoryStore`（=同じジョブ配列を共有する側）を
+// `seedJob` からも参照できるよう、モジュールスコープで直近のインスタンスを持ち回る。
+// vitest はデフォルトで同一 describe 内の it() を並行実行しないため、この持ち回りは安全
+// （`packages/postgres` が同じ理由で単一の共有 DB 接続を使い回すのと同じパターン）。
+let latestMemoryStoreForOutboxSeed: InMemoryMemoryStore | undefined;
+
+describeOutboxStoreConformance({
+  name: "in-memory placeholder",
+  createStore: () => {
+    const memoryStore = new InMemoryMemoryStore();
+    latestMemoryStoreForOutboxSeed = memoryStore;
+    return new InMemoryOutboxStore(memoryStore.outboxJobs);
+  },
+  seedJob: async (ctx, input) => {
+    if (!latestMemoryStoreForOutboxSeed) {
+      throw new Error("seedJob より先に createStore() を呼ぶ必要がある");
+    }
+    const { jobs } = await latestMemoryStoreForOutboxSeed.createObservationWithOutbox(
+      ctx,
+      { tenantId: ctx.tenantId, subjectId: null, externalId: null, kind: "utterance", payload: {} },
+      [input.kind],
+    );
+    const job = jobs[0]!;
+    if (input.payload) {
+      job.payload = input.payload;
+    }
+    if (input.availableAt) {
+      job.availableAt = input.availableAt;
+    }
+    return job;
+  },
+});
+
+let latestTenantSettingsStore: InMemoryTenantSettingsStore | undefined;
+
+describeTenantSettingsStoreConformance({
+  name: "in-memory placeholder",
+  createStore: () => {
+    const store = new InMemoryTenantSettingsStore();
+    latestTenantSettingsStore = store;
+    return store;
+  },
+  setDefaultHalfLifeHours: (ctx: Ctx, hours: number) => {
+    if (!latestTenantSettingsStore) {
+      throw new Error("setDefaultHalfLifeHours より先に createStore() を呼ぶ必要がある");
+    }
+    latestTenantSettingsStore.setDefaultHalfLifeHours(ctx.tenantId, hours);
+  },
 });

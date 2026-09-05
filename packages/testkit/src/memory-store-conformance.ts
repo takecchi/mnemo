@@ -145,6 +145,82 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
     });
 
     // -------------------------------------------------------------------
+    // getObservation / createObservationWithOutbox（roadmap.md 段階3・transactional outbox）
+    // -------------------------------------------------------------------
+
+    it("getObservation は作成済みの Observation を返す", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const created = await store.createObservation(
+        ctx,
+        buildNewObservationFixture({ tenantId: "tenant-1" }),
+      );
+      const fetched = await store.getObservation(ctx, created.id);
+      expect(fetched?.id).toBe(created.id);
+    });
+
+    it("getObservation は存在しない id に対して null を返す", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      expect(await store.getObservation(ctx, "does-not-exist")).toBeNull();
+    });
+
+    it("getObservation はクロステナントで null を返す", async () => {
+      const store = await createStore();
+      const ctxA: Ctx = { tenantId: "tenant-a" };
+      const ctxB: Ctx = { tenantId: "tenant-b" };
+      const created = await store.createObservation(
+        ctxA,
+        buildNewObservationFixture({ tenantId: "tenant-a" }),
+      );
+      expect(await store.getObservation(ctxB, created.id)).toBeNull();
+    });
+
+    it("createObservationWithOutbox は新規作成時に created: true と、jobKinds ぶんの job を返す", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const { observation, created, jobs } = await store.createObservationWithOutbox(
+        ctx,
+        buildNewObservationFixture({ tenantId: "tenant-1", externalId: "ext-outbox-1" }),
+        ["extract"],
+      );
+      expect(created).toBe(true);
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]?.kind).toBe("extract");
+      expect(jobs[0]?.payload.observationId).toBe(observation.id);
+      expect(jobs[0]?.tenantId).toBe("tenant-1");
+    });
+
+    it("createObservationWithOutbox は冪等な再送で created: false・jobs: [] を返す（重複ジョブを積まない）", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const input = buildNewObservationFixture({
+        tenantId: "tenant-1",
+        externalId: "ext-outbox-2",
+      });
+
+      const first = await store.createObservationWithOutbox(ctx, input, ["extract"]);
+      expect(first.created).toBe(true);
+
+      const second = await store.createObservationWithOutbox(ctx, input, ["extract"]);
+      expect(second.created).toBe(false);
+      expect(second.jobs).toEqual([]);
+      expect(second.observation.id).toBe(first.observation.id);
+    });
+
+    it("createObservationWithOutbox は jobKinds が空なら job を作らない", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const { created, jobs } = await store.createObservationWithOutbox(
+        ctx,
+        buildNewObservationFixture({ tenantId: "tenant-1" }),
+        [],
+      );
+      expect(created).toBe(true);
+      expect(jobs).toEqual([]);
+    });
+
+    // -------------------------------------------------------------------
     // createMemory の冪等性（docs/architecture.md §3.5、§5.1）
     // -------------------------------------------------------------------
 
@@ -250,6 +326,79 @@ export function describeMemoryStoreConformance(options: MemoryStoreConformanceOp
       const second = await store.createMemory(ctx, input);
 
       expect(second.id).not.toBe(first.id);
+    });
+
+    // -------------------------------------------------------------------
+    // createMemoryWithOutbox（roadmap.md 段階3・transactional outbox）
+    // -------------------------------------------------------------------
+
+    it("createMemoryWithOutbox は新規作成時に created: true と、jobKinds ぶんの job を返す", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const { memory, created, jobs } = await store.createMemoryWithOutbox(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", contentHash: "hash-outbox-1" }),
+        ["embed"],
+      );
+      expect(created).toBe(true);
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]?.kind).toBe("embed");
+      expect(jobs[0]?.payload.memoryId).toBe(memory.id);
+    });
+
+    it("createMemoryWithOutbox は抽出の冪等キーに衝突したら created: false・jobs: [] を返す", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const observation = await store.createObservation(
+        ctx,
+        buildNewObservationFixture({ tenantId: "tenant-1" }),
+      );
+      const input = buildNewMemoryFixture({
+        tenantId: "tenant-1",
+        sourceObservationId: observation.id,
+        extractorVersion: "v1",
+        contentHash: "hash-outbox-2",
+      });
+
+      const first = await store.createMemoryWithOutbox(ctx, input, ["embed"]);
+      expect(first.created).toBe(true);
+
+      const second = await store.createMemoryWithOutbox(ctx, input, ["embed"]);
+      expect(second.created).toBe(false);
+      expect(second.jobs).toEqual([]);
+      expect(second.memory.id).toBe(first.memory.id);
+    });
+
+    // -------------------------------------------------------------------
+    // setEmbeddingStatus（roadmap.md 段階3の完了条件: pending → ready | failed）
+    // -------------------------------------------------------------------
+
+    it("setEmbeddingStatus は embeddingStatus を 'ready' に遷移させる", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const memory = await store.createMemory(
+        ctx,
+        buildNewMemoryFixture({ tenantId: "tenant-1", embeddingStatus: "pending" }),
+      );
+      expect(memory.embeddingStatus).toBe("pending");
+
+      const updated = await store.setEmbeddingStatus(ctx, memory.id, "ready");
+      expect(updated.embeddingStatus).toBe("ready");
+    });
+
+    it("setEmbeddingStatus は embeddingStatus を 'failed' にも遷移させる", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      const memory = await store.createMemory(ctx, buildNewMemoryFixture({ tenantId: "tenant-1" }));
+
+      const updated = await store.setEmbeddingStatus(ctx, memory.id, "failed");
+      expect(updated.embeddingStatus).toBe("failed");
+    });
+
+    it("setEmbeddingStatus は存在しない Memory に対して失敗する", async () => {
+      const store = await createStore();
+      const ctx: Ctx = { tenantId: "tenant-1" };
+      await expect(store.setEmbeddingStatus(ctx, "does-not-exist", "ready")).rejects.toThrow();
     });
 
     // -------------------------------------------------------------------

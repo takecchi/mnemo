@@ -1,6 +1,7 @@
 import { defaultDecayStrategy } from "@mnemo/core";
 import type {
   Ctx,
+  EmbeddingStatus,
   GroupCount,
   Memory,
   MemoryId,
@@ -9,6 +10,9 @@ import type {
   NewMemory,
   NewObservation,
   Observation,
+  ObservationId,
+  OutboxJobKind,
+  OutboxJobRecord,
   RecallId,
   RecallScope,
 } from "@mnemo/core";
@@ -20,6 +24,12 @@ import { nextId } from "./id.js";
  * **本番用途ではない。** `packages/testkit` の適合テストが実際に実行できることを示す
  * ためだけの最小実装であり、`packages/postgres`（段階2）が実装すべき振る舞いの
  * 完全な参照ではない。特に索引・永続化・トランザクションは一切模していない。
+ *
+ * roadmap.md 段階3で `outboxJobs` を公開した。`InMemoryOutboxStore`
+ * （`./in-memory-outbox-store.js`）にこの配列をそのまま渡すことで、`createObservationWithOutbox` /
+ * `createMemoryWithOutbox` が積んだジョブを `OutboxStore` 側から claim/complete/fail できる
+ * （`packages/postgres` が同一 DB・同一トランザクションで両方を実装するのと対応する、
+ * ADR 0005・0003）。
  */
 export class InMemoryMemoryStore implements MemoryStore {
   private readonly observations = new Map<string, Observation>();
@@ -28,6 +38,8 @@ export class InMemoryMemoryStore implements MemoryStore {
   private readonly extractionIndex = new Map<string, MemoryId>();
   /** `(tenant_id, recall_id, memory_id)` の使用報告の冪等キー。 */
   private readonly usages = new Set<string>();
+  /** `InMemoryOutboxStore` と共有する outbox ジョブの配列（同一プロセス内の参照共有）。 */
+  readonly outboxJobs: OutboxJobRecord[] = [];
 
   async createObservation(ctx: Ctx, input: NewObservation): Promise<Observation> {
     if (input.externalId) {
@@ -50,6 +62,54 @@ export class InMemoryMemoryStore implements MemoryStore {
     };
     this.observations.set(observation.id, observation);
     return observation;
+  }
+
+  async getObservation(ctx: Ctx, id: ObservationId): Promise<Observation | null> {
+    const observation = this.observations.get(id);
+    if (!observation || observation.tenantId !== ctx.tenantId) {
+      return null;
+    }
+    return observation;
+  }
+
+  private enqueueOutboxJob(
+    ctx: Ctx,
+    kind: OutboxJobKind,
+    payload: Record<string, unknown>,
+  ): OutboxJobRecord {
+    const job: OutboxJobRecord = {
+      id: nextId("job"),
+      tenantId: ctx.tenantId,
+      kind,
+      payload,
+      availableAt: new Date(),
+      claimedAt: null,
+      claimedBy: null,
+      attempts: 0,
+      completedAt: null,
+      failedAt: null,
+      lastError: null,
+      createdAt: new Date(),
+    };
+    this.outboxJobs.push(job);
+    return job;
+  }
+
+  async createObservationWithOutbox(
+    ctx: Ctx,
+    input: NewObservation,
+    jobKinds: OutboxJobKind[],
+  ): Promise<{ observation: Observation; created: boolean; jobs: OutboxJobRecord[] }> {
+    const sizeBefore = this.observations.size;
+    const observation = await this.createObservation(ctx, input);
+    const created = this.observations.size > sizeBefore;
+    if (!created) {
+      return { observation, created: false, jobs: [] };
+    }
+    const jobs = jobKinds.map((kind) =>
+      this.enqueueOutboxJob(ctx, kind, { observationId: observation.id }),
+    );
+    return { observation, created: true, jobs };
   }
 
   async createMemory(ctx: Ctx, input: NewMemory): Promise<Memory> {
@@ -102,6 +162,21 @@ export class InMemoryMemoryStore implements MemoryStore {
     return memory;
   }
 
+  async createMemoryWithOutbox(
+    ctx: Ctx,
+    input: NewMemory,
+    jobKinds: OutboxJobKind[],
+  ): Promise<{ memory: Memory; created: boolean; jobs: OutboxJobRecord[] }> {
+    const sizeBefore = this.memories.size;
+    const memory = await this.createMemory(ctx, input);
+    const created = this.memories.size > sizeBefore;
+    if (!created) {
+      return { memory, created: false, jobs: [] };
+    }
+    const jobs = jobKinds.map((kind) => this.enqueueOutboxJob(ctx, kind, { memoryId: memory.id }));
+    return { memory, created: true, jobs };
+  }
+
   async get(ctx: Ctx, id: MemoryId): Promise<Memory | null> {
     const memory = this.memories.get(id);
     if (!memory || memory.tenantId !== ctx.tenantId) {
@@ -135,6 +210,16 @@ export class InMemoryMemoryStore implements MemoryStore {
     if (opts?.supersededById !== undefined) {
       memory.supersededById = opts.supersededById;
     }
+    memory.updatedAt = new Date();
+    return memory;
+  }
+
+  async setEmbeddingStatus(ctx: Ctx, id: MemoryId, status: EmbeddingStatus): Promise<Memory> {
+    const memory = await this.get(ctx, id);
+    if (!memory) {
+      throw new Error(`InMemoryMemoryStore: memory not found for tenant: ${id}`);
+    }
+    memory.embeddingStatus = status;
     memory.updatedAt = new Date();
     return memory;
   }
