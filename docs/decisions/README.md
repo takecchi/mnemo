@@ -28,3 +28,4 @@ alteroid (github.com/takecchi/alteroid) を根拠として引く箇所は、確�
 | [0013](./0013-extraction-outcome-taxonomy.md) | 抽出の失敗を、成功と同じ顔で記録しない | 採用 (2026-09) |
 | [0014](./0014-package-name-mnemora.md) | 名前を `mnemora` / `@mnemora/*` に確定する | 採用 (2026-09) |
 | [0015](./0015-root-test-gate-reports-skipped-db-tests.md) | ルートの `test` 門は、DB テストを「走らせなかった」と明示する | 採用 (2026-09) |
+| [0016](./0016-db-test-gate-explicit-exclusion.md) | DB テストの排他は依存グラフに頼らず、門のコード自身に載せる | 採用 (2026-09) |
