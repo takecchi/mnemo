@@ -42,6 +42,11 @@ const DB_TIMEOUT = "mnemora_lock_timeout";
 const DB_UNAVAILABLE = "mnemora_lock_unavailable";
 
 const RESTRICTED_ROLE = "mnemora_lock_denied_role";
+/**
+ * 歯4専用の固定パスワード。値そのものに意味は無く、CI（scram/md5 認証）で
+ * このロールに実際に接続できることが目的（詳細は下の `connectionStringFor` のコメント）。
+ */
+const RESTRICTED_ROLE_PASSWORD = "mnemora-lock-denied-role-password";
 
 const createdDatabases: string[] = [];
 const openedPools: Pool[] = [];
@@ -52,11 +57,26 @@ function admin(): Pool {
   return adminPool;
 }
 
-function connectionStringFor(database: string, user?: string): string {
+/**
+ * `user` を指定するときは `password` も明示的に渡すこと。
+ *
+ * `requireDatabaseUrl()` のパスワードは管理接続ロール（`postgres` 等）のものであり、
+ * `url.username` だけ差し替えて `url.password` を残すと、**別ロールへ管理ロールの
+ * パスワードを流用してしまう。** 手元の `trust` 認証ではパスワードを検査しないため
+ * これで繋がってしまい問題が顕在化しないが、CI の scram/md5 認証では
+ * `password authentication failed for user "..."` で接続そのものが落ちる
+ * ——「ロック機構が使えない」ではなく「そもそも繋がらない」を測ってしまい、
+ * 歯が空振りする（実際に CI で踏んだ）。
+ */
+function connectionStringFor(
+  database: string,
+  credentials?: { user: string; password: string },
+): string {
   const url = new URL(requireDatabaseUrl());
   url.pathname = `/${database}`;
-  if (user) {
-    url.username = user;
+  if (credentials) {
+    url.username = credentials.user;
+    url.password = credentials.password;
   }
   return url.toString();
 }
@@ -204,10 +224,15 @@ describe("runMigrations の排他（advisory lock）", () => {
     const lockKey = 333333333333333n;
     const pool = await createBlankDatabase(DB_UNAVAILABLE);
 
+    // パスワードは固定で作る/更新する（既存ロールが残っていても揃える）。
+    // トークンを $1 で渡せない（DO ブロックはリテラル文字列を要求する）ため、
+    // 値は定数の `RESTRICTED_ROLE_PASSWORD` のみを埋め込む。
     await admin().query(
       `DO $do$ BEGIN
            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${RESTRICTED_ROLE}') THEN
-             CREATE ROLE ${RESTRICTED_ROLE} LOGIN;
+             CREATE ROLE ${RESTRICTED_ROLE} LOGIN PASSWORD '${RESTRICTED_ROLE_PASSWORD}';
+           ELSE
+             ALTER ROLE ${RESTRICTED_ROLE} PASSWORD '${RESTRICTED_ROLE_PASSWORD}';
            END IF;
          END $do$;`,
     );
@@ -220,7 +245,10 @@ describe("runMigrations の排他（advisory lock）", () => {
     await restrictedPool.end();
 
     const deniedPool = new Pool({
-      connectionString: connectionStringFor(DB_UNAVAILABLE, RESTRICTED_ROLE),
+      connectionString: connectionStringFor(DB_UNAVAILABLE, {
+        user: RESTRICTED_ROLE,
+        password: RESTRICTED_ROLE_PASSWORD,
+      }),
       max: 1,
     });
     openedPools.push(deniedPool);

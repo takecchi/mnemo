@@ -231,6 +231,52 @@
   変異を戻すと4本とも緑に戻ることを確認した（この PR に含まれるコードは
   排他ありの状態であり、変異は一時的に当てただけで残していない）。
 
+- **CI で歯4が落ちた経緯（認証方式への依存を見落としていた）**:
+
+  最初に push した版では、歯4の制限ロール `mnemora_lock_denied_role` を
+  **パスワード無しで** `CREATE ROLE` していた。手元の PostgreSQL は
+  `initdb -A trust` で構築しており、`trust` 認証はパスワードを一切検査しない
+  ため、この抜けは手元では顕在化しなかった。CI の service container は
+  `POSTGRES_PASSWORD` 付き（scram 認証）で、`CREATE ROLE ... LOGIN`
+  （パスワード無し）で作ったロールへパスワード無しで繋ごうとすると、
+  接続そのものが `FATAL: password authentication failed for user
+  "mnemora_lock_denied_role"` で落ちる。
+
+  さらに、接続文字列を組む `connectionStringFor(database, user)` が
+  `url.username` だけを差し替えて `url.password` を管理ロール（`postgres`）の
+  ものへ残していたため、**制限ロールへ管理ロールのパスワードを流用してしまう**
+  という2つ目の欠陥もあった。
+
+  結果として **歯4は「ロック機構が使えなかった」ではなく「そもそも繋がらな
+  かった」を測っていた**——`MigrationLockUnavailableError` ではなく生の
+  `password authentication failed` を受け取り、CI で
+  `packages/postgres` ジョブと `root-gate-db-stage` ジョブの両方がこの
+  1本だけで赤くなった（他93本は緑のまま）。
+
+  **直した内容**: `mnemora_lock_denied_role` を固定パスワード付きで
+  `CREATE ROLE ... LOGIN PASSWORD '...'`（既存なら `ALTER ROLE ...
+  PASSWORD '...'`）で作り、`connectionStringFor` は `user` と `password` を
+  常に対で受け取るように変更した（`credentials?: { user, password }`）。
+  `trust` 認証の手元ではパスワードは単に無視されるため、両方の環境で
+  同じ経路を通る。
+
+  **修正の検証**: 手元の PostgreSQL の `pg_hba.conf` の `host` 行を一時的に
+  `trust` から `scram-sha-256` へ変更し、`pg_superuser` にもパスワードを設定して
+  `pg_reload_conf()` した上で、**修正前のコード（このブランチの直前のコミット）
+  に戻して歯4を走らせたところ、実際に CI と同じ
+  `password authentication failed for user "mnemora_lock_denied_role"` で
+  赤くなることを手元でも再現した。** 修正後のコードに戻すと緑に戻ることも
+  確認した。検証後、`pg_hba.conf` は `trust` へ戻してある。
+
+  **修正後、歯4にもう一度ロック除去の変異を当て直した**（接続経路を変えたため、
+  歯4がまだ噛んでいる保証が要る）。scram-sha-256 環境下で変異を当てたところ、
+  4本とも再び赤くなった。歯4はパスワードが正しく通るようになった分、
+  `MigrationLockUnavailableError` の代わりに `permission denied for schema
+  public`（advisory lock を経ずに `CREATE TABLE` へ進んでしまい、その段で
+  ロール自身の権限不足に当たった）で失敗した——`trust` 環境で当てた変異と
+  同じ形（権限剥奪では止まらず、別のエラーで失敗する）であり、歯4が
+  変異を引き続き検知できることを確認した。
+
 - **結果（この決定が招くもの）**:
 
   - `runMigrations()` は、他プロセスが同時にマイグレーションしていない通常時でも
@@ -258,6 +304,16 @@
 
 - **確かめていないこと（段階1・段階2を通じて）**:
 
+  - **手元の門は、既定では CI と同じ認証方式を測っていない。** 手元の
+    PostgreSQL は root 無しで構築する都合上 `initdb -A trust` で立てており、
+    パスワードを一切検査しない。歯4は「権限が無いロールで接続する」ことを
+    検査しているが、認証そのもの（パスワードが正しいか）は `trust` の下では
+    常に無条件で通ってしまう。実際、この非対称のために歯4のパスワード関連の
+    欠陥（前述の CI 落ちの経緯）は**手元の門を何度全部通しても検出できず、
+    CI（scram 認証）で初めて顕在化した。** 今回は `pg_hba.conf` を一時的に
+    `scram-sha-256` へ切り替えて個別に検証したが、これは通常の門の実行経路には
+    含まれていない一回限りの手動確認であり、**この非対称自体は解消していない**
+    ——今後も手元の門は「認証方式に依存する壊れ方」を素通りしうる。
   - **マイグレーションファイルが2本以上に増え、衝突点がファイル内の途中へ
     移ったときに部分適用が残るかは実測していない、外挿である。** 現在の
     `packages/postgres/migrations/` は `0001_init.sql` 1本のみで、1ファイル
